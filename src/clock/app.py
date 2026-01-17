@@ -32,7 +32,7 @@ DB_PATH = Path("alarms.db")
 ALARM_WAV = Path("assets/sounds/alarm.wav")
 RAMP_SECONDS = 30
 
-PHOTOS_DIR = Path("assets/photos")
+PHOTOS_DIR = Path("F:\PHOTOS")
 PHOTO_INTERVAL_SECONDS = 12
 
 
