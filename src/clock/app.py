@@ -746,9 +746,9 @@ class SmartDisplayRoot(BoxLayout):
         self.carousel.scroll_distance = dp(120)
         self.carousel.scroll_timeout = 300
         self.carousel.add_widget(HomePanel(mgr, self.audio))
-        self.carousel.add_widget(CalendarPanel())
         self.carousel.add_widget(AlarmsPanel(mgr))
-        self.carousel.add_widget(AppSettingsPanel())
+        self.carousel.add_widget(CalendarPanel())
+        # self.carousel.add_widget(AppSettingsPanel())
         
         self.carousel.bind(index=self._on_carousel_index_change)
 
@@ -804,7 +804,7 @@ class SmartDisplayRoot(BoxLayout):
 
 class SmartDisplayApp(App):
     def build(self):
-        Window.size = (800, 480)  # nice for Pi touchscreens too
+        Window.size = (1024, 600)  # nice for Pi touchscreens too
         # Window.fullscreen = True  # enable later when you're ready
 
         store = AlarmStore(DB_PATH)
