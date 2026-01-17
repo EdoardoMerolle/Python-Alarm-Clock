@@ -1,0 +1,4 @@
+Kivy==2.2.1
+pygame==2.5.2
+icalendar==5.0.7
+requests==2.31.0

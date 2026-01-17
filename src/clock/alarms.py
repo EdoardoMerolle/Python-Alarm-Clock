@@ -195,7 +195,7 @@ class AlarmManager:
             return None  # no days selected
 
         # Search up to 7 days ahead for next selected weekday/time
-        for day_offset in range(0, 8):
+        for day_offset in range(0, 7):
             day = (now.date() + timedelta(days=day_offset))
             weekday = datetime.combine(day, time(0, 0)).weekday()
             if not mask_has_day(alarm.weekdays_mask, weekday):

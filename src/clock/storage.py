@@ -85,8 +85,8 @@ class AlarmStore:
                 "UPDATE alarms SET one_shot_date = ? WHERE id = ?",
                 (one_shot_date, alarm_id),
             )
-        # ---- Snooze state helpers ----
 
+    # ---- Snooze state helpers ----
     def get_snooze(self) -> tuple[Optional[str], Optional[int]]:
         with self._connect() as con:
             row = con.execute(
