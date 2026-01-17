@@ -17,6 +17,16 @@ CREATE TABLE IF NOT EXISTS alarms (
 );
 
 CREATE INDEX IF NOT EXISTS idx_alarms_enabled ON alarms(enabled);
+
+-- single-row state table for snooze / active alarm
+CREATE TABLE IF NOT EXISTS alarm_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  snooze_until TEXT,       -- ISO datetime string or NULL
+  snooze_alarm_id INTEGER  -- which alarm was snoozed (optional, can be NULL)
+);
+
+INSERT OR IGNORE INTO alarm_state(id, snooze_until, snooze_alarm_id)
+VALUES (1, NULL, NULL);
 """
 
 
@@ -75,3 +85,26 @@ class AlarmStore:
                 "UPDATE alarms SET one_shot_date = ? WHERE id = ?",
                 (one_shot_date, alarm_id),
             )
+        # ---- Snooze state helpers ----
+
+    def get_snooze(self) -> tuple[Optional[str], Optional[int]]:
+        with self._connect() as con:
+            row = con.execute(
+                "SELECT snooze_until, snooze_alarm_id FROM alarm_state WHERE id = 1"
+            ).fetchone()
+            if row is None:
+                return None, None
+            return (
+                (str(row["snooze_until"]) if row["snooze_until"] is not None else None),
+                (int(row["snooze_alarm_id"]) if row["snooze_alarm_id"] is not None else None),
+            )
+
+    def set_snooze(self, snooze_until: Optional[str], snooze_alarm_id: Optional[int]) -> None:
+        with self._connect() as con:
+            con.execute(
+                "UPDATE alarm_state SET snooze_until = ?, snooze_alarm_id = ? WHERE id = 1",
+                (snooze_until, snooze_alarm_id),
+            )
+
+    def clear_snooze(self) -> None:
+        self.set_snooze(None, None)

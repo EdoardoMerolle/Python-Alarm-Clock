@@ -56,6 +56,10 @@ class NextAlarm:
     alarm: Alarm
     trigger_at: datetime
 
+@dataclass(frozen=True)
+class SnoozeState:
+    until: datetime
+    alarm_id: Optional[int]
 
 class AlarmManager:
     """
@@ -111,14 +115,43 @@ class AlarmManager:
     def compute_next(self, now: Optional[datetime] = None) -> Optional[NextAlarm]:
         """
         Returns the next upcoming enabled alarm (weekly or one-shot) after 'now'.
+        Snooze overrides normal scheduling if active.
         """
         now = now or datetime.now()
+
+        # 1) Snooze override
+        snooze = self.get_snooze_state()
+        if snooze is not None and snooze.until > now:
+            # We may not know which alarm it came from; try to attach it if present
+            alarm_obj = None
+            if snooze.alarm_id is not None:
+                for a in self.list_alarms():
+                    if a.id == snooze.alarm_id:
+                        alarm_obj = a
+                        break
+            if alarm_obj is None:
+                # fallback "virtual alarm"
+                alarm_obj = Alarm(
+                    id=-1,
+                    label="Snoozed alarm",
+                    hour=snooze.until.hour,
+                    minute=snooze.until.minute,
+                    weekdays_mask=0,
+                    enabled=True,
+                    one_shot_date=None,
+                )
+            return NextAlarm(alarm=alarm_obj, trigger_at=snooze.until)
+
+        # If snooze is in the past, clear it
+        if snooze is not None and snooze.until <= now:
+            self.store.clear_snooze()
+
+        # 2) Normal next-alarm computation
         candidates: list[NextAlarm] = []
 
         for a in self.list_alarms():
             if not a.enabled:
                 continue
-
             nxt = self._next_trigger_for_alarm(a, now)
             if nxt is not None:
                 candidates.append(NextAlarm(alarm=a, trigger_at=nxt))
@@ -129,12 +162,22 @@ class AlarmManager:
         candidates.sort(key=lambda x: x.trigger_at)
         return candidates[0]
 
-    def mark_fired_if_one_shot(self, alarm: Alarm, fired_at: datetime) -> None:
+
+    def mark_fired(self, alarm: Alarm, fired_at: datetime) -> None:
         """
-        If a one-shot alarm fired, disable it (or clear date). Here we disable it.
+        Call when an alarm actually fires (starts ringing).
+        If it's a one-shot alarm, disable it.
+        Also clear any expired snooze (safety).
         """
+        # If a one-shot fired, disable it so it doesn't come back tomorrow.
         if alarm.is_one_shot():
             self.set_enabled(alarm.id, False)
+
+        # If we just fired from a snooze override, clear it
+        snooze = self.get_snooze_state()
+        if snooze is not None and snooze.until <= fired_at:
+            self.store.clear_snooze()
+
 
     def _next_trigger_for_alarm(self, alarm: Alarm, now: datetime) -> Optional[datetime]:
         # One-shot: if date in the past -> no trigger
@@ -163,3 +206,26 @@ class AlarmManager:
                 return candidate
 
         return None
+    
+    def get_snooze_state(self) -> Optional[SnoozeState]:
+        until_str, alarm_id = self.store.get_snooze()
+        if until_str is None:
+            return None
+        try:
+            until_dt = datetime.fromisoformat(until_str)
+        except ValueError:
+            # if the stored value is corrupted, clear it
+            self.store.clear_snooze()
+            return None
+        return SnoozeState(until=until_dt, alarm_id=alarm_id)
+
+    def snooze(self, minutes: int, now: Optional[datetime] = None, alarm_id: Optional[int] = None) -> datetime:
+        base = now.replace(second=0, microsecond=0)
+        until = base + timedelta(minutes=minutes)
+        self.store.set_snooze(until.isoformat(timespec="seconds"), alarm_id)
+        return until
+
+    def stop(self) -> None:
+        # Stops any currently ringing alarm (audio handled elsewhere) and clears snooze override
+        self.store.clear_snooze()
+

@@ -48,9 +48,13 @@ def main() -> None:
 
         if seconds <= 0:
             print("\n*** ALARM FIRED ***", nxt.alarm.label, "at", now)
-            mgr.mark_fired_if_one_shot(nxt.alarm, now)
-            # in the real app, you'd trigger audio + UI here
+            mgr.mark_fired(nxt.alarm, now)
+
+            until = mgr.snooze(minutes=1, now=now, alarm_id=(nxt.alarm.id if nxt.alarm.id != -1 else None))
+            print(f"Snoozed for 1 minute until {until}")
+
             time.sleep(2)
+
 
         time.sleep(0.2)
 
