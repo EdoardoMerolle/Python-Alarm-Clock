@@ -17,6 +17,8 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
 from kivy.graphics import Color, RoundedRectangle
+from kivy.animation import Animation
+
 
 from clock.alarms import AlarmManager, NextAlarm
 from clock.storage import AlarmStore
@@ -111,13 +113,19 @@ class HomePanel(BoxLayout):
         self.root = FloatLayout()
         self.add_widget(self.root)
 
-        # Background photo fills the whole panel
-        self.photo = Image(size_hint=(1, 1), pos_hint={"x": 0, "y": 0})
-        try:
-            self.photo.fit_mode = "cover"  # newer Kivy
-        except Exception:
-            pass
-        self.root.add_widget(self.photo)
+        # Two photo layers for cross-fade
+        self.photo_a = Image(size_hint=(1, 1), pos_hint={"x": 0, "y": 0}, opacity=1)
+        self.photo_b = Image(size_hint=(1, 1), pos_hint={"x": 0, "y": 0}, opacity=0)
+
+        for p in (self.photo_a, self.photo_b):
+            try:
+                p.fit_mode = "cover"
+            except Exception:
+                pass
+            self.root.add_widget(p)
+
+        self._photo_front = self.photo_a
+        self._photo_back = self.photo_b
 
         # Overlay box anchored to bottom
         self.overlay = BoxLayout(
@@ -235,69 +243,72 @@ class HomePanel(BoxLayout):
 
     def _set_photo_initial(self) -> None:
         if not self._photos:
-            self.photo.source = ""
             return
-        self.photo.source = str(self._photos[0])
-        self.photo.reload()
+        self._photo_front.source = str(self._photos[0])
+        self._photo_front.opacity = 1
+        self._photo_back.opacity = 0
 
     def _next_photo(self, _dt) -> None:
         if not self._photos:
             return
+
         self._photo_index = (self._photo_index + 1) % len(self._photos)
-        self.photo.source = str(self._photos[self._photo_index])
-        self.photo.reload()
+        next_path = str(self._photos[self._photo_index])
+
+        back = self._photo_back
+        front = self._photo_front
+
+        back.source = next_path
+        back.opacity = 0
+        back.reload()
+
+        # Fade in new photo, fade out old
+        fade_in = Animation(opacity=1, duration=1.2)
+        fade_out = Animation(opacity=0, duration=1.2)
+
+        fade_in.start(back)
+        fade_out.start(front)
+
+        # Swap roles
+        self._photo_front, self._photo_back = back, front
+
 
     def _tick(self, _dt) -> None:
-        now = datetime.now()
-        self.time_label.text = now.strftime("%H:%M")
-        self.date_label.text = now.strftime("%A, %d %B %Y")
-        self._set_alarm_controls_visible(self.ringing_alarm_id is not None)
+        import traceback
+        try:
+            now = datetime.now()
+            self.time_label.text = now.strftime("%H:%M")
+            self.date_label.text = now.strftime("%A, %d %B %Y")
+            self._set_alarm_controls_visible(self.ringing_alarm_id is not None)
 
-        nxt = self.mgr.compute_next(now)
+            nxt = self.mgr.compute_next(now)
 
-        if self.ringing_alarm_id is not None:
-            self.next_label.text = f"RINGING: {self._ringing_label or 'Alarm'}"
-            return
+            if self.ringing_alarm_id is not None:
+                self.next_label.text = f"RINGING: {self._ringing_label or 'Alarm'}"
+                return
 
-        if nxt is None:
-            self.next_label.text = "Next: (no alarms set)"
-            return
+            if nxt is None:
+                self.next_label.text = "Next: (no alarms set)"
+                return
 
-        seconds = int((nxt.trigger_at - now).total_seconds())
-        self.next_label.text = (
-            f"Next: {nxt.alarm.label} • {nxt.trigger_at.strftime('%H:%M')} "
-            f"(in {format_countdown(seconds)})"
-        )
+            seconds = int((nxt.trigger_at - now).total_seconds())
+            self.next_label.text = (
+                f"Next: {nxt.alarm.label} • {nxt.trigger_at.strftime('%H:%M')} "
+                f"(in {format_countdown(seconds)})"
+            )
 
-        if seconds <= 0 and self.ringing_alarm_id is None:
-            import traceback
-
-            try:
+            if seconds <= 0 and self.ringing_alarm_id is None:
                 self.ringing_alarm_id = (nxt.alarm.id if nxt.alarm.id != -1 else None)
                 self._ringing_label = nxt.alarm.label
                 self.mgr.mark_fired(nxt.alarm, now)
 
-                # Start audio (this is the most common crash point)
-                self.audio.play_loop_with_ramp(
-                    ALARM_WAV,
-                    ramp_seconds=RAMP_SECONDS,
-                    start_volume=0.15,
-                    max_volume=1.0,
-                )
-
+                self.audio.play_loop_with_ramp(ALARM_WAV, ramp_seconds=RAMP_SECONDS, start_volume=0.15, max_volume=1.0)
                 self._set_alarm_controls_visible(True)
 
-            except Exception as e:
-                # Keep app alive and show error on screen
-                self.ringing_alarm_id = None
-                self._ringing_label = None
-                self._set_alarm_controls_visible(False)
+        except Exception as e:
+            print("ERROR in _tick:\n", "".join(traceback.format_exception(type(e), e, e.__traceback__)))
+            self.next_label.text = "UI error (see console)"
 
-                err = "".join(traceback.format_exception(type(e), e, e.__traceback__))
-                print("ERROR while firing alarm:\n", err)
-
-                # Also show a short message in the UI
-                self.next_label.text = "Alarm error (see console)."
 
 
     def on_snooze(self, *_):

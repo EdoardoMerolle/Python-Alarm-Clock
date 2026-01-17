@@ -220,10 +220,12 @@ class AlarmManager:
         return SnoozeState(until=until_dt, alarm_id=alarm_id)
 
     def snooze(self, minutes: int, now: Optional[datetime] = None, alarm_id: Optional[int] = None) -> datetime:
-        base = now.replace(second=0, microsecond=0)
+        now = now or datetime.now()
+        base = now.replace(second=0, microsecond=0)  # snap to minute boundary
         until = base + timedelta(minutes=minutes)
         self.store.set_snooze(until.isoformat(timespec="seconds"), alarm_id)
         return until
+
 
     def stop(self) -> None:
         # Stops any currently ringing alarm (audio handled elsewhere) and clears snooze override
