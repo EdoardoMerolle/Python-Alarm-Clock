@@ -16,6 +16,7 @@ from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.slider import Slider
 from kivy.uix.widget import Widget
 from kivy.graphics import Color, RoundedRectangle
 from kivy.animation import Animation
@@ -67,6 +68,8 @@ class Card(BoxLayout):
     def _update(self, *_):
         self._rect.pos = self.pos
         self._rect.size = self.size
+
+
 
 
 class PillButton(Button):
@@ -179,12 +182,14 @@ class HomePanel(BoxLayout):
         self.date_label.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
 
         self.next_label = Label(
-            text="Next: (no alarms)",
+            text="Next Alarm: (no alarms)",
             font_size=24,
             bold=True,
             color=(1, 1, 1, 1),
             halign="left",
             valign="middle",
+            size_hint=(1, None),
+            height=dp(50),
         )
         self.next_label.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
 
@@ -416,6 +421,8 @@ class AlarmsPanel(BoxLayout):
         self.new_minute = 0
         self.weekdays = [True, True, True, True, True, False, False]
         self.one_shot_today = False
+        self.editing_alarm_id = None
+        self.editing_alarm_is_oneshot = False
         
         self._build_editor_ui()
 
@@ -431,6 +438,16 @@ class AlarmsPanel(BoxLayout):
 
     def _build_editor_ui(self):
         self.editor_card.clear_widgets()
+
+        # Time display at top
+        self.time_display = Label(
+            text=self._time_text(),
+            font_size=36,
+            bold=True,
+            size_hint=(1, None),
+            height=dp(50),
+        )
+        self.editor_card.add_widget(self.time_display)
 
         # Label selector
         row1 = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10))
@@ -456,27 +473,29 @@ class AlarmsPanel(BoxLayout):
 
         # Time controls
         row2 = BoxLayout(size_hint=(1, None), height=dp(60), spacing=dp(8))
-        self.time_display = Label(text=self._time_text(), font_size=32, bold=True, size_hint=(0.3, 1))
         
-        h_minus = PillButton(text="H-", font_size=16, size_hint=(0.175, 1),
+        h_minus = PillButton(text="H-", font_size=16, size_hint=(0.18, 1),
                             fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
-        h_plus = PillButton(text="H+", font_size=16, size_hint=(0.175, 1),
+        h_plus = PillButton(text="H+", font_size=16, size_hint=(0.18, 1),
                            fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
-        m_minus = PillButton(text="M-", font_size=16, size_hint=(0.175, 1),
+        m_minus = PillButton(text="M-", font_size=16, size_hint=(0.18, 1),
                             fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
-        m_plus = PillButton(text="M+", font_size=16, size_hint=(0.175, 1),
+        m_plus = PillButton(text="M+", font_size=16, size_hint=(0.18, 1),
                            fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
+        m_plus_30 = PillButton(text="+30m", font_size=14, size_hint=(0.28, 1),
+                              fill=(0.25, 0.70, 0.35, 1), fill_down=(0.20, 0.62, 0.30, 1))
         
         h_minus.bind(on_release=lambda *_: self._adjust_time("h", -1))
         h_plus.bind(on_release=lambda *_: self._adjust_time("h", +1))
         m_minus.bind(on_release=lambda *_: self._adjust_time("m", -1))
         m_plus.bind(on_release=lambda *_: self._adjust_time("m", +1))
+        m_plus_30.bind(on_release=lambda *_: self._adjust_time("m", +30))
         
-        row2.add_widget(self.time_display)
         row2.add_widget(h_minus)
         row2.add_widget(h_plus)
         row2.add_widget(m_minus)
         row2.add_widget(m_plus)
+        row2.add_widget(m_plus_30)
         self.editor_card.add_widget(row2)
 
         # Weekday toggles
@@ -532,6 +551,7 @@ class AlarmsPanel(BoxLayout):
     def toggle_editor(self, *_args, force_close: bool = False):
         if force_close:
             self.editor_open = False
+            self.editing_alarm_id = None
         else:
             self.editor_open = not self.editor_open
 
@@ -545,6 +565,7 @@ class AlarmsPanel(BoxLayout):
             self.editor_card.opacity = 0
             self.editor_card.disabled = True
             self.add_btn.text = "  Add  "
+            self.editing_alarm_id = None
 
     def _time_text(self) -> str:
         return f"{self.new_hour:02d}:{self.new_minute:02d}"
@@ -581,6 +602,11 @@ class AlarmsPanel(BoxLayout):
 
     def _save_alarm(self, *_):
         hhmm = f"{self.new_hour:02d}:{self.new_minute:02d}"
+        
+        # If editing, delete the old alarm first
+        if self.editing_alarm_id is not None:
+            self.mgr.delete(self.editing_alarm_id)
+        
         if self.one_shot_today:
             self.mgr.add_one_shot_alarm(self.new_label, hhmm, date.today(), enabled=True)
         else:
@@ -619,14 +645,24 @@ class AlarmsPanel(BoxLayout):
             if a.one_shot_date:
                 label += f" • {a.one_shot_date}"
 
-            lbl_widget = Label(text=label, font_size=18, size_hint=(0.5, 1), halign="left", valign="middle")
+            lbl_widget = Label(text=label, font_size=18, size_hint=(0.35, 1), halign="left", valign="middle")
             lbl_widget.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
             row.add_widget(lbl_widget)
 
+            edit_btn = PillButton(
+                text="Edit",
+                fill=(0.40, 0.60, 0.95, 1),
+                fill_down=(0.35, 0.55, 0.85, 1),
+                font_size=16,
+                size_hint=(0.2, 1),
+            )
+            edit_btn.bind(on_release=lambda _btn, alarm_id=a.id: self._load_alarm_for_edit(alarm_id))
+            row.add_widget(edit_btn)
+
             toggle = PillButton(
-                text="On" if a.enabled else "Off",
-                fill=(0.20, 0.52, 0.95, 1) if a.enabled else (0.35, 0.35, 0.40, 1),
-                fill_down=(0.16, 0.45, 0.85, 1) if a.enabled else (0.30, 0.30, 0.34, 1),
+                text="ON" if a.enabled else "OFF",
+                fill=(0.25, 0.70, 0.35, 1) if a.enabled else (0.50, 0.50, 0.55, 1),
+                fill_down=(0.20, 0.62, 0.30, 1) if a.enabled else (0.45, 0.45, 0.50, 1),
                 font_size=16,
                 size_hint=(0.25, 1),
             )
@@ -638,7 +674,7 @@ class AlarmsPanel(BoxLayout):
                 fill=(0.92, 0.28, 0.28, 1),
                 fill_down=(0.82, 0.22, 0.22, 1),
                 font_size=16,
-                size_hint=(0.25, 1),
+                size_hint=(0.2, 1),
             )
             del_btn.bind(on_release=lambda _btn, alarm_id=a.id: self._delete(alarm_id))
             row.add_widget(del_btn)
@@ -652,6 +688,30 @@ class AlarmsPanel(BoxLayout):
     def _delete(self, alarm_id: int):
         self.mgr.delete(alarm_id)
         self.refresh(0)
+    
+    def _load_alarm_for_edit(self, alarm_id: int):
+        alarms = self.mgr.list_alarms()
+        alarm = next((a for a in alarms if a.id == alarm_id), None)
+        if not alarm:
+            return
+        
+        self.editing_alarm_id = alarm_id
+        self.new_label = alarm.label
+        self.new_hour = alarm.hour
+        self.new_minute = alarm.minute
+        self.editing_alarm_is_oneshot = alarm.one_shot_date is not None
+        self.one_shot_today = self.editing_alarm_is_oneshot
+        
+        # Load weekdays if not one-shot
+        if not self.editing_alarm_is_oneshot:
+            self.weekdays = [False] * 7
+            if hasattr(alarm, 'weekdays'):
+                for i, day_enabled in enumerate(alarm.weekdays):
+                    if i < 7:
+                        self.weekdays[i] = day_enabled
+        
+        self._build_editor_ui()
+        self.toggle_editor()
 
 
 class AppSettingsPanel(BoxLayout):
@@ -689,8 +749,57 @@ class SmartDisplayRoot(BoxLayout):
         self.carousel.add_widget(CalendarPanel())
         self.carousel.add_widget(AlarmsPanel(mgr))
         self.carousel.add_widget(AppSettingsPanel())
+        
+        self.carousel.bind(index=self._on_carousel_index_change)
 
         self.add_widget(self.carousel)
+        
+        # Page indicator dots
+        self.indicator_box = BoxLayout(
+            size_hint=(1, None),
+            height=dp(30),
+            spacing=dp(12),
+            padding=dp(12),
+        )
+        with self.indicator_box.canvas.before:
+            Color(0.10, 0.10, 0.12, 1)
+            self._indicator_bg = RoundedRectangle(
+                pos=self.indicator_box.pos,
+                size=self.indicator_box.size,
+                radius=[0]
+            )
+        self.indicator_box.bind(pos=self._update_indicator_bg, size=self._update_indicator_bg)
+        
+        self.indicator_dots = []
+        for i in range(4):
+            dot = Widget(size_hint=(None, 1), width=dp(14))
+            color = (0.20, 0.52, 0.95, 1) if i == 0 else (0.40, 0.40, 0.45, 1)
+            with dot.canvas:
+                Color(*color)
+                dot._circle = RoundedRectangle(pos=dot.pos, size=dot.size, radius=[dp(7)])
+            dot._color = color
+            dot.bind(pos=self._update_dot, size=self._update_dot)
+            self.indicator_dots.append(dot)
+            self.indicator_box.add_widget(dot)
+        
+        self.add_widget(self.indicator_box)
+    
+    def _update_indicator_bg(self, *_):
+        self._indicator_bg.pos = self.indicator_box.pos
+        self._indicator_bg.size = self.indicator_box.size
+    
+    def _update_dot(self, dot, *_):
+        dot._circle.pos = dot.pos
+        dot._circle.size = dot.size
+    
+    def _on_carousel_index_change(self, carousel, index):
+        for i, dot in enumerate(self.indicator_dots):
+            new_color = (0.20, 0.52, 0.95, 1) if i == index else (0.40, 0.40, 0.45, 1)
+            dot._color = new_color
+            dot.canvas.clear()
+            with dot.canvas:
+                Color(*new_color)
+                dot._circle = RoundedRectangle(pos=dot.pos, size=dot.size, radius=[dp(7)])
 
 
 class SmartDisplayApp(App):
