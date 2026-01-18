@@ -210,7 +210,7 @@ class HomePanel(BoxLayout):
             valign="middle",
             color=(1, 1, 1, 1),
             size_hint=(1, None),
-            height=dp(110),
+            height=dp(100),
         )
         self.time_label.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
 
@@ -797,7 +797,7 @@ class SmartDisplayRoot(BoxLayout):
 
         self.indicator_dots: list[Widget] = []
         self._build_dots()
-        self.add_widget(self.indicator_box)
+        # self.add_widget(self.indicator_box)
 
     def _build_dots(self):
         self.indicator_box.clear_widgets()
