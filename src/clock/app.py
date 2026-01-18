@@ -836,7 +836,7 @@ class SmartDisplayRoot(BoxLayout):
 class SmartDisplayApp(App):
     def build(self):
         Window.size = (1024, 600)
-        # Window.fullscreen = True  # enable later
+        Window.fullscreen = True  # enable later
 
         store = AlarmStore(DB_PATH)
         mgr = AlarmManager(store)
