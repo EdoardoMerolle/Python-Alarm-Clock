@@ -254,7 +254,7 @@ class HomePanel(BoxLayout):
         )
 
         self.snooze_btn = PillButton(
-            text=f"Snooze {SNOOZE_MINUTES} min",
+            text=f"Snooze",
             fill=(0.20, 0.52, 0.95, 1),
             fill_down=(0.16, 0.45, 0.85, 1),
             font_size=26,
@@ -835,7 +835,7 @@ class SmartDisplayRoot(BoxLayout):
 
 class SmartDisplayApp(App):
     def build(self):
-        Window.size = (1024, 600)
+        #Window.size = (1024, 600)
         Window.fullscreen = True  # enable later
 
         store = AlarmStore(DB_PATH)
