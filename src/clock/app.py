@@ -34,6 +34,8 @@ ALARM_WAV = Path("assets/sounds/alarm.wav")
 RAMP_SECONDS = 30
 
 PHOTOS_DIR = Path("/home/edoardo/Pictures/camera pics")
+#PHOTOS_DIR = Path(r"F:\Photos")
+
 PHOTO_INTERVAL_SECONDS = 12
 PHOTO_PLACEHOLDER = Path("assets/placeholder.jpg")  # optional fallback
 
