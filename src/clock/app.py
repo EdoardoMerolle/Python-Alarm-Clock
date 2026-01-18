@@ -319,11 +319,19 @@ class HomePanel(BoxLayout):
         if not self._photos:
             return
 
-        self._photo_index = (self._photo_index + 1) % len(self._photos)
+        # advance index
+        self._photo_index += 1
+
+        # if we wrapped, reshuffle
+        if self._photo_index >= len(self._photos):
+            self._photo_index = 0
+            random.shuffle(self._photos)
+
         next_path = str(self._photos[self._photo_index])
 
         back = self._photo_back
         front = self._photo_front
+
         back.source = next_path
         back.opacity = 0
         back.reload()
@@ -334,6 +342,8 @@ class HomePanel(BoxLayout):
             self._photo_front, self._photo_back = back, front
 
         KivyClock.schedule_once(start_fade, 0)
+
+
 
     def _tick(self, _dt) -> None:
         import traceback
