@@ -9,6 +9,5 @@ else
 fi
 
 export PYTHONPATH="src"
-# exec git pull
 exec "$PYTHON" src/clock/app.py
 
