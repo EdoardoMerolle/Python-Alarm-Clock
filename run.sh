@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-
-exec git pull
-
 set -e
 cd "$(dirname "$0")"
 
