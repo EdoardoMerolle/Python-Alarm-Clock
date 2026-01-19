@@ -3,10 +3,18 @@ from __future__ import annotations
 # IMPORTANT: Config must be set BEFORE importing most Kivy modules
 from kivy.config import Config
 
-# Touch / gesture tuning (helps reduce accidental swipes + duplicate taps)
-Config.set("kivy", "scroll_distance", "30")   # require more movement to start scrolling
-Config.set("kivy", "scroll_timeout", "300")   # ms
-# If you use a mouse sometimes, this keeps multitouch sane
+# --- Display / window (Pi 7" 1024x600) ---
+Config.set("graphics", "width", "1024")
+Config.set("graphics", "height", "600")
+Config.set("graphics", "fullscreen", "auto")   # fullscreen without changing desktop mode
+Config.set("graphics", "borderless", "1")
+Config.set("graphics", "resizable", "0")
+
+# --- Touch / gesture tuning (reduce accidental swipes + bounce) ---
+Config.set("kivy", "scroll_distance", "30")    # require more movement to start scrolling
+Config.set("kivy", "scroll_timeout", "300")    # ms
+Config.set("kivy", "exit_on_escape", "0")
+# If you sometimes use a mouse, keep multitouch sane:
 Config.set("input", "mouse", "mouse,multitouch_on_demand")
 
 from datetime import datetime, date
@@ -36,7 +44,7 @@ from clock.storage import AlarmStore
 from clock.audio import AudioEngine
 
 
-# ---- Config ----
+# ---- App config ----
 SNOOZE_MINUTES = 9
 DB_PATH = Path("alarms.db")
 
@@ -44,16 +52,15 @@ ALARM_WAV = Path("assets/sounds/alarm.wav")
 RAMP_SECONDS = 30
 
 PHOTOS_DIR = Path("/home/edoardo/Pictures/camera pics")
-# PHOTOS_DIR = Path(r"F:\Photos")
 PHOTO_INTERVAL_SECONDS = 12
-PHOTO_PLACEHOLDER = Path("assets/placeholder.jpg")  # optional
+PHOTO_PLACEHOLDER = Path("assets/placeholder.jpg")
 
 
-# ---- Tap debounce (fixes “button pressed multiple times”) ----
+# ---- Touch helpers ----
 def debounced_callback(fn, cooldown_s: float = 0.35):
     """
     Wrap a callback so it can only run once per cooldown window.
-    This solves touchscreen bounce (multiple on_release events per tap).
+    Solves touchscreen bounce (multiple on_release events per tap).
     """
     last_t = 0.0
 
@@ -68,7 +75,19 @@ def debounced_callback(fn, cooldown_s: float = 0.35):
     return _wrapped
 
 
-# ---- Helpers ----
+def disable_briefly(widget: Widget, seconds: float = 0.35) -> None:
+    """
+    Touch users often double-tap if UI doesn't respond instantly.
+    Briefly disabling the pressed widget prevents repeated activations.
+    """
+    try:
+        widget.disabled = True
+        KivyClock.schedule_once(lambda _dt: setattr(widget, "disabled", False), seconds)
+    except Exception:
+        pass
+
+
+# ---- General helpers ----
 def format_countdown(seconds: int) -> str:
     if seconds < 0:
         seconds = 0
@@ -117,7 +136,7 @@ class Card(BoxLayout):
         self._radius = radius
         self._bg = bg
         with self.canvas.before:
-            Color(*self._bg)
+            self._color = Color(*self._bg)
             self._rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[self._radius])
         self.bind(pos=self._update, size=self._update)
 
@@ -127,13 +146,15 @@ class Card(BoxLayout):
 
 
 class PillButton(Button):
+    """
+    Touch-friendly button: big hit-area, visual feedback, no canvas clearing.
+    """
     def __init__(self, **kwargs):
         self._fill = kwargs.pop("fill", (0.20, 0.52, 0.95, 1))
         self._fill_down = kwargs.pop("fill_down", (0.16, 0.45, 0.85, 1))
         self._radius = kwargs.pop("radius", dp(22))
         super().__init__(**kwargs)
 
-        # NOTE: do NOT set always_release=True (can worsen bounce on some touch HW)
         self.background_normal = ""
         self.background_down = ""
         self.background_color = (0, 0, 0, 0)
@@ -144,7 +165,7 @@ class PillButton(Button):
         self.text_size = self.size
 
         with self.canvas.before:
-            Color(*self._fill)
+            self._color = Color(*self._fill)
             self._rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[self._radius])
 
         self.bind(pos=self._update, size=self._on_size_change, state=self._state_update)
@@ -158,12 +179,10 @@ class PillButton(Button):
         self.text_size = self.size
 
     def _state_update(self, *_):
-        self.canvas.before.clear()
-        with self.canvas.before:
-            Color(*(self._fill_down if self.state == "down" else self._fill))
-            self._rect = RoundedRectangle(pos=self.pos, size=self.size, radius=[self._radius])
+        self._color.rgba = self._fill_down if self.state == "down" else self._fill
 
 
+# ---- Panels ----
 class HomePanel(BoxLayout):
     def __init__(self, mgr: AlarmManager, audio: AudioEngine, **kwargs):
         super().__init__(orientation="vertical", **kwargs)
@@ -188,17 +207,17 @@ class HomePanel(BoxLayout):
         self._photo_front = self.photo_a
         self._photo_back = self.photo_b
 
-        # Overlay (bottom)
+        # Overlay (bottom info)
         self.overlay = BoxLayout(
             orientation="vertical",
             padding=dp(24),
             spacing=dp(10),
             size_hint=(1, None),
-            height=dp(220),
+            height=dp(240),
             pos_hint={"x": 0, "y": 0},
         )
         with self.overlay.canvas.before:
-            Color(0, 0, 0, 0.55)
+            self._overlay_color = Color(0, 0, 0, 0.55)
             self._overlay_rect = RoundedRectangle(pos=self.overlay.pos, size=self.overlay.size, radius=[0])
         self.overlay.bind(pos=self._update_overlay, size=self._update_overlay)
 
@@ -210,7 +229,7 @@ class HomePanel(BoxLayout):
             valign="middle",
             color=(1, 1, 1, 1),
             size_hint=(1, None),
-            height=dp(100),
+            height=dp(110),
         )
         self.time_label.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
 
@@ -227,13 +246,13 @@ class HomePanel(BoxLayout):
 
         self.next_label = Label(
             text="Next: (no alarms)",
-            font_size=24,
+            font_size=26,
             bold=True,
             color=(1, 1, 1, 1),
             halign="left",
             valign="middle",
             size_hint=(1, None),
-            height=dp(50),
+            height=dp(60),
         )
         self.next_label.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
 
@@ -242,31 +261,30 @@ class HomePanel(BoxLayout):
         self.overlay.add_widget(self.next_label)
         self.root.add_widget(self.overlay)
 
-        # Buttons bar
+        # Alarm controls (Snooze/Stop) - hidden unless ringing
         self.btn_card = Card(
             orientation="horizontal",
             padding=dp(14),
             spacing=dp(14),
             size_hint=(1, None),
-            height=dp(96),
+            height=dp(110),
             pos_hint={"x": 0, "y": 0},
             bg=(0.10, 0.10, 0.12, 0.95),
         )
 
         self.snooze_btn = PillButton(
-            text=f"Snooze",
+            text="Snooze",
             fill=(0.20, 0.52, 0.95, 1),
             fill_down=(0.16, 0.45, 0.85, 1),
-            font_size=26,
+            font_size=28,
         )
         self.stop_btn = PillButton(
             text="Stop",
             fill=(0.92, 0.28, 0.28, 1),
             fill_down=(0.82, 0.22, 0.22, 1),
-            font_size=26,
+            font_size=28,
         )
 
-        # Debounced bindings (fixes multiple presses)
         self.snooze_btn.bind(on_release=debounced_callback(self.on_snooze, 0.35))
         self.stop_btn.bind(on_release=debounced_callback(self.on_stop, 0.35))
 
@@ -275,11 +293,12 @@ class HomePanel(BoxLayout):
         self.root.add_widget(self.btn_card)
         self._set_alarm_controls_visible(False)
 
-        # Photos
+        # Photos list
         self._photos = self._load_photos()
         self._photo_index = 0
         self._set_photo_initial()
 
+        # Timers
         KivyClock.schedule_interval(self._tick, 0.2)
         KivyClock.schedule_interval(self._next_photo, PHOTO_INTERVAL_SECONDS)
 
@@ -291,7 +310,7 @@ class HomePanel(BoxLayout):
         if visible:
             self.btn_card.opacity = 1
             self.btn_card.disabled = False
-            self.btn_card.height = dp(96)
+            self.btn_card.height = dp(110)
         else:
             self.btn_card.opacity = 0
             self.btn_card.disabled = True
@@ -319,10 +338,7 @@ class HomePanel(BoxLayout):
         if not self._photos:
             return
 
-        # advance index
         self._photo_index += 1
-
-        # if we wrapped, reshuffle
         if self._photo_index >= len(self._photos):
             self._photo_index = 0
             random.shuffle(self._photos)
@@ -342,8 +358,6 @@ class HomePanel(BoxLayout):
             self._photo_front, self._photo_back = back, front
 
         KivyClock.schedule_once(start_fade, 0)
-
-
 
     def _tick(self, _dt) -> None:
         import traceback
@@ -395,18 +409,23 @@ class HomePanel(BoxLayout):
         self._ringing_label = None
         self._set_alarm_controls_visible(False)
 
-    def on_snooze(self, *_):
+    def on_snooze(self, btn: Optional[Widget] = None, *_):
+        if btn is not None:
+            disable_briefly(btn, 0.45)
+
         if self._is_ringing:
             self.mgr.snooze(SNOOZE_MINUTES, alarm_id=self._ringing_alarm_id)
             self._clear_ringing()
             return
 
-        # optional shortcut: snooze next even if nothing ringing
+        # Optional shortcut: snooze next even if nothing ringing
         nxt = self.mgr.compute_next(datetime.now())
         alarm_id = getattr(nxt.alarm, "id", None) if nxt else None
         self.mgr.snooze(SNOOZE_MINUTES, alarm_id=alarm_id)
 
-    def on_stop(self, *_):
+    def on_stop(self, btn: Optional[Widget] = None, *_):
+        if btn is not None:
+            disable_briefly(btn, 0.45)
         self.mgr.stop()
         self._clear_ringing()
 
@@ -416,11 +435,18 @@ class CalendarPanel(BoxLayout):
         super().__init__(orientation="vertical", padding=dp(18), spacing=dp(14), **kwargs)
         self.add_widget(Label(text="Calendar", font_size=52, bold=True, size_hint=(1, None), height=dp(70)))
         card = Card(orientation="vertical", padding=dp(18), spacing=dp(10))
-        card.add_widget(Label(
-            text="Placeholder for calendar.\n\nNext step options:\n• local .ics file\n• Google Calendar\n• Home Assistant calendar entities (later)",
-            font_size=24,
-            color=(0.85, 0.85, 0.90, 1),
-        ))
+        card.add_widget(
+            Label(
+                text=(
+                    "Placeholder for calendar.\n\nNext step options:\n"
+                    "• local .ics file\n"
+                    "• Google Calendar\n"
+                    "• Home Assistant calendar entities (later)"
+                ),
+                font_size=24,
+                color=(0.85, 0.85, 0.90, 1),
+            )
+        )
         self.add_widget(card)
 
 
@@ -430,7 +456,7 @@ class AlarmsPanel(BoxLayout):
         self.mgr = mgr
         self.editor_open = False
 
-        header = BoxLayout(size_hint=(1, None), height=dp(64), spacing=dp(16))
+        header = BoxLayout(size_hint=(1, None), height=dp(72), spacing=dp(16))
 
         title = Label(
             text="Alarms",
@@ -439,7 +465,7 @@ class AlarmsPanel(BoxLayout):
             halign="left",
             valign="middle",
             size_hint=(1, None),
-            height=dp(64),
+            height=dp(72),
         )
         title.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
 
@@ -449,8 +475,8 @@ class AlarmsPanel(BoxLayout):
             fill_down=(0.20, 0.62, 0.30, 1),
             font_size=22,
             size_hint=(None, None),
-            width=dp(220),
-            height=dp(60),
+            width=dp(240),
+            height=dp(64),
         )
         self.add_btn.bind(on_release=debounced_callback(self.toggle_editor, 0.30))
 
@@ -496,17 +522,17 @@ class AlarmsPanel(BoxLayout):
 
         self.time_display = Label(
             text=self._time_text(),
-            font_size=36,
+            font_size=38,
             bold=True,
             size_hint=(1, None),
-            height=dp(50),
+            height=dp(56),
         )
         self.editor_card.add_widget(self.time_display)
 
-        row1 = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10))
+        row1 = BoxLayout(size_hint=(1, None), height=dp(56), spacing=dp(10))
         self.label_display = Label(
             text=f"Label: {self.new_label}",
-            font_size=18,
+            font_size=20,
             size_hint=(0.6, 1),
             halign="left",
             valign="middle",
@@ -514,7 +540,7 @@ class AlarmsPanel(BoxLayout):
         self.label_display.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
         label_btn = PillButton(
             text="Change",
-            font_size=16,
+            font_size=18,
             size_hint=(0.4, 1),
             fill=(0.35, 0.35, 0.40, 1),
             fill_down=(0.30, 0.30, 0.34, 1),
@@ -524,24 +550,34 @@ class AlarmsPanel(BoxLayout):
         row1.add_widget(label_btn)
         self.editor_card.add_widget(row1)
 
-        row2 = BoxLayout(size_hint=(1, None), height=dp(60), spacing=dp(8))
+        row2 = BoxLayout(size_hint=(1, None), height=dp(70), spacing=dp(8))
 
-        h_minus = PillButton(text="H-", font_size=16, size_hint=(0.18, 1),
-                             fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
-        h_plus = PillButton(text="H+", font_size=16, size_hint=(0.18, 1),
-                            fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
-        m_minus = PillButton(text="M-", font_size=16, size_hint=(0.18, 1),
-                             fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
-        m_plus = PillButton(text="M+", font_size=16, size_hint=(0.18, 1),
-                            fill=(0.35, 0.35, 0.40, 1), fill_down=(0.30, 0.30, 0.34, 1))
-        m_plus_30 = PillButton(text="+30m", font_size=14, size_hint=(0.28, 1),
-                               fill=(0.25, 0.70, 0.35, 1), fill_down=(0.20, 0.62, 0.30, 1))
+        def small_btn(txt: str) -> PillButton:
+            return PillButton(
+                text=txt,
+                font_size=18,
+                size_hint=(0.18, 1),
+                fill=(0.35, 0.35, 0.40, 1),
+                fill_down=(0.30, 0.30, 0.34, 1),
+            )
 
-        h_minus.bind(on_release=debounced_callback(lambda *_: self._adjust_time("h", -1), 0.12))
-        h_plus.bind(on_release=debounced_callback(lambda *_: self._adjust_time("h", +1), 0.12))
-        m_minus.bind(on_release=debounced_callback(lambda *_: self._adjust_time("m", -1), 0.12))
-        m_plus.bind(on_release=debounced_callback(lambda *_: self._adjust_time("m", +1), 0.12))
-        m_plus_30.bind(on_release=debounced_callback(lambda *_: self._adjust_time("m", +30), 0.12))
+        h_minus = small_btn("H-")
+        h_plus = small_btn("H+")
+        m_minus = small_btn("M-")
+        m_plus = small_btn("M+")
+        m_plus_30 = PillButton(
+            text="+30m",
+            font_size=16,
+            size_hint=(0.28, 1),
+            fill=(0.25, 0.70, 0.35, 1),
+            fill_down=(0.20, 0.62, 0.30, 1),
+        )
+
+        h_minus.bind(on_release=debounced_callback(lambda b, *_: (disable_briefly(b, 0.12), self._adjust_time("h", -1)), 0.12))
+        h_plus.bind(on_release=debounced_callback(lambda b, *_: (disable_briefly(b, 0.12), self._adjust_time("h", +1)), 0.12))
+        m_minus.bind(on_release=debounced_callback(lambda b, *_: (disable_briefly(b, 0.12), self._adjust_time("m", -1)), 0.12))
+        m_plus.bind(on_release=debounced_callback(lambda b, *_: (disable_briefly(b, 0.12), self._adjust_time("m", +1)), 0.12))
+        m_plus_30.bind(on_release=debounced_callback(lambda b, *_: (disable_briefly(b, 0.12), self._adjust_time("m", +30)), 0.12))
 
         row2.add_widget(h_minus)
         row2.add_widget(h_plus)
@@ -550,28 +586,28 @@ class AlarmsPanel(BoxLayout):
         row2.add_widget(m_plus_30)
         self.editor_card.add_widget(row2)
 
-        row3 = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(6))
+        row3 = BoxLayout(size_hint=(1, None), height=dp(60), spacing=dp(6))
         days = ["M", "T", "W", "Th", "F", "Sa", "Su"]
         self.day_btns = []
         for i, d in enumerate(days):
             on = self.weekdays[i]
             btn = PillButton(
                 text=d,
-                font_size=14,
+                font_size=16,
                 size_hint=(1, 1),
                 fill=(0.20, 0.52, 0.95, 1) if on else (0.35, 0.35, 0.40, 1),
                 fill_down=(0.16, 0.45, 0.85, 1) if on else (0.30, 0.30, 0.34, 1),
             )
-            btn.bind(on_release=debounced_callback(lambda _b, idx=i: self._toggle_day(idx), 0.15))
+            btn.bind(on_release=debounced_callback(lambda b, *_ , idx=i: (disable_briefly(b, 0.15), self._toggle_day(idx)), 0.15))
             self.day_btns.append(btn)
             row3.add_widget(btn)
         self.editor_card.add_widget(row3)
 
-        row4 = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10))
+        row4 = BoxLayout(size_hint=(1, None), height=dp(60), spacing=dp(10))
         self.oneshot_btn = PillButton(
             text="One-shot: ON" if self.one_shot_today else "One-shot: OFF",
-            font_size=16,
-            size_hint=(0.6, 1),
+            font_size=18,
+            size_hint=(0.8, 1),
             fill=(0.20, 0.52, 0.95, 1) if self.one_shot_today else (0.35, 0.35, 0.40, 1),
             fill_down=(0.16, 0.45, 0.85, 1) if self.one_shot_today else (0.30, 0.30, 0.34, 1),
         )
@@ -579,21 +615,21 @@ class AlarmsPanel(BoxLayout):
         row4.add_widget(self.oneshot_btn)
         self.editor_card.add_widget(row4)
 
-        row5 = BoxLayout(size_hint=(1, None), height=dp(50), spacing=dp(10))
+        row5 = BoxLayout(size_hint=(1, None), height=dp(68), spacing=dp(10))
         save_btn = PillButton(
             text="Save",
-            font_size=18,
+            font_size=20,
             fill=(0.25, 0.70, 0.35, 1),
             fill_down=(0.20, 0.62, 0.30, 1),
         )
         cancel_btn = PillButton(
             text="Cancel",
-            font_size=18,
+            font_size=20,
             fill=(0.60, 0.60, 0.65, 1),
             fill_down=(0.50, 0.50, 0.55, 1),
         )
         save_btn.bind(on_release=debounced_callback(self._save_alarm, 0.50))
-        cancel_btn.bind(on_release=debounced_callback(lambda *_: self.toggle_editor(force_close=True), 0.30))
+        cancel_btn.bind(on_release=debounced_callback(lambda b, *_: (disable_briefly(b, 0.25), self.toggle_editor(force_close=True)), 0.30))
         row5.add_widget(save_btn)
         row5.add_widget(cancel_btn)
         self.editor_card.add_widget(row5)
@@ -606,7 +642,7 @@ class AlarmsPanel(BoxLayout):
             self.editor_open = not self.editor_open
 
         if self.editor_open:
-            self.editor_card.height = dp(310)
+            self.editor_card.height = dp(360)
             self.editor_card.opacity = 1
             self.editor_card.disabled = False
             self.add_btn.text = "Close"
@@ -637,11 +673,15 @@ class AlarmsPanel(BoxLayout):
         btn._fill_down = (0.16, 0.45, 0.85, 1) if on else (0.30, 0.30, 0.34, 1)
         btn._state_update()
 
-    def _toggle_oneshot(self, *_):
+    def _toggle_oneshot(self, btn: Optional[Widget] = None, *_):
+        if btn is not None:
+            disable_briefly(btn, 0.25)
         self.one_shot_today = not self.one_shot_today
         self._build_editor_ui()
 
-    def _cycle_label(self, *_):
+    def _cycle_label(self, btn: Optional[Widget] = None, *_):
+        if btn is not None:
+            disable_briefly(btn, 0.2)
         presets = ["Alarm", "Wake up", "Workout", "School", "Meeting", "Medicine"]
         try:
             i = presets.index(self.new_label)
@@ -650,7 +690,10 @@ class AlarmsPanel(BoxLayout):
         self.new_label = presets[(i + 1) % len(presets)]
         self.label_display.text = f"Label: {self.new_label}"
 
-    def _save_alarm(self, *_):
+    def _save_alarm(self, btn: Optional[Widget] = None, *_):
+        if btn is not None:
+            disable_briefly(btn, 0.6)
+
         hhmm = f"{self.new_hour:02d}:{self.new_minute:02d}"
 
         enabled = True
@@ -674,13 +717,15 @@ class AlarmsPanel(BoxLayout):
         alarms = self.mgr.list_alarms()
 
         if not alarms:
-            self.list_box.add_widget(Label(
-                text="No alarms yet.",
-                font_size=22,
-                color=(0.85, 0.85, 0.90, 1),
-                size_hint_y=None,
-                height=dp(50),
-            ))
+            self.list_box.add_widget(
+                Label(
+                    text="No alarms yet.",
+                    font_size=22,
+                    color=(0.85, 0.85, 0.90, 1),
+                    size_hint_y=None,
+                    height=dp(56),
+                )
+            )
             return
 
         for a in alarms:
@@ -689,7 +734,7 @@ class AlarmsPanel(BoxLayout):
                 padding=dp(12),
                 spacing=dp(10),
                 size_hint_y=None,
-                height=dp(70),
+                height=dp(86),
                 bg=(0.16, 0.16, 0.18, 1),
             )
 
@@ -697,7 +742,7 @@ class AlarmsPanel(BoxLayout):
             if getattr(a, "one_shot_date", None):
                 label += f" • {a.one_shot_date}"
 
-            lbl = Label(text=label, font_size=18, size_hint=(0.40, 1), halign="left", valign="middle")
+            lbl = Label(text=label, font_size=20, size_hint=(0.44, 1), halign="left", valign="middle")
             lbl.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
             row.add_widget(lbl)
 
@@ -705,30 +750,45 @@ class AlarmsPanel(BoxLayout):
                 text="Edit",
                 fill=(0.40, 0.60, 0.95, 1),
                 fill_down=(0.35, 0.55, 0.85, 1),
-                font_size=16,
-                size_hint=(0.20, 1),
+                font_size=18,
+                size_hint=(0.18, 1),
             )
-            edit_btn.bind(on_release=debounced_callback(lambda _btn, alarm_id=a.id: self._load_alarm_for_edit(alarm_id), 0.30))
+            edit_btn.bind(
+                on_release=debounced_callback(
+                    lambda b, *_ , alarm_id=a.id: (disable_briefly(b, 0.3), self._load_alarm_for_edit(alarm_id)),
+                    0.30,
+                )
+            )
             row.add_widget(edit_btn)
 
             toggle_btn = PillButton(
                 text="ON" if a.enabled else "OFF",
                 fill=(0.25, 0.70, 0.35, 1) if a.enabled else (0.50, 0.50, 0.55, 1),
                 fill_down=(0.20, 0.62, 0.30, 1) if a.enabled else (0.45, 0.45, 0.50, 1),
-                font_size=16,
-                size_hint=(0.20, 1),
+                font_size=18,
+                size_hint=(0.18, 1),
             )
-            toggle_btn.bind(on_release=debounced_callback(lambda _btn, alarm_id=a.id, enabled=a.enabled: self._toggle(alarm_id, enabled), 0.30))
+            toggle_btn.bind(
+                on_release=debounced_callback(
+                    lambda b, *_ , alarm_id=a.id, enabled=a.enabled: (disable_briefly(b, 0.3), self._toggle(alarm_id, enabled)),
+                    0.30,
+                )
+            )
             row.add_widget(toggle_btn)
 
             del_btn = PillButton(
                 text="Del",
                 fill=(0.92, 0.28, 0.28, 1),
                 fill_down=(0.82, 0.22, 0.22, 1),
-                font_size=16,
-                size_hint=(0.20, 1),
+                font_size=18,
+                size_hint=(0.18, 1),
             )
-            del_btn.bind(on_release=debounced_callback(lambda _btn, alarm_id=a.id: self._delete(alarm_id), 0.40))
+            del_btn.bind(
+                on_release=debounced_callback(
+                    lambda b, *_ , alarm_id=a.id: (disable_briefly(b, 0.45), self._delete(alarm_id)),
+                    0.40,
+                )
+            )
             row.add_widget(del_btn)
 
             self.list_box.add_widget(row)
@@ -776,67 +836,30 @@ class SmartDisplayRoot(BoxLayout):
         super().__init__(orientation="vertical", **kwargs)
         self.audio = AudioEngine()
 
-        self.carousel = SmartCarousel(direction="right", loop=False)
-        # Make swipes less sensitive (helps taps not become swipes)
-        self.carousel.scroll_distance = dp(180)  # was 120
-        self.carousel.scroll_timeout = 300
+        # Make swipes deliberate (avoid “tap becomes swipe”)
+        self.carousel = SmartCarousel(
+            direction="right",
+            loop=False,
+            scroll_timeout=400,
+            scroll_distance=dp(220),
+        )
 
         self.carousel.add_widget(HomePanel(mgr, self.audio))
         self.carousel.add_widget(AlarmsPanel(mgr))
         self.carousel.add_widget(CalendarPanel())
 
-        self.carousel.bind(index=self._on_carousel_index_change)
         self.add_widget(self.carousel)
-
-        # Dots (dynamic)
-        self.indicator_box = BoxLayout(size_hint=(1, None), height=dp(30), spacing=dp(12), padding=dp(12))
-        with self.indicator_box.canvas.before:
-            Color(0.10, 0.10, 0.12, 1)
-            self._indicator_bg = RoundedRectangle(pos=self.indicator_box.pos, size=self.indicator_box.size, radius=[0])
-        self.indicator_box.bind(pos=self._update_indicator_bg, size=self._update_indicator_bg)
-
-        self.indicator_dots: list[Widget] = []
-        self._build_dots()
-        # self.add_widget(self.indicator_box)
-
-    def _build_dots(self):
-        self.indicator_box.clear_widgets()
-        self.indicator_dots.clear()
-
-        num_pages = len(self.carousel.slides)
-        for i in range(num_pages):
-            dot = Widget(size_hint=(None, 1), width=dp(14))
-            color = (0.20, 0.52, 0.95, 1) if i == self.carousel.index else (0.40, 0.40, 0.45, 1)
-            with dot.canvas:
-                Color(*color)
-                dot._circle = RoundedRectangle(pos=dot.pos, size=dot.size, radius=[dp(7)])
-            dot.bind(pos=self._update_dot, size=self._update_dot)
-            self.indicator_dots.append(dot)
-            self.indicator_box.add_widget(dot)
-
-    def _update_indicator_bg(self, *_):
-        self._indicator_bg.pos = self.indicator_box.pos
-        self._indicator_bg.size = self.indicator_box.size
-
-    def _update_dot(self, dot, *_):
-        dot._circle.pos = dot.pos
-        dot._circle.size = dot.size
-
-    def _on_carousel_index_change(self, _carousel, index: int):
-        if len(self.indicator_dots) != len(self.carousel.slides):
-            self._build_dots()
-        for i, dot in enumerate(self.indicator_dots):
-            new_color = (0.20, 0.52, 0.95, 1) if i == index else (0.40, 0.40, 0.45, 1)
-            dot.canvas.clear()
-            with dot.canvas:
-                Color(*new_color)
-                dot._circle = RoundedRectangle(pos=dot.pos, size=dot.size, radius=[dp(7)])
 
 
 class SmartDisplayApp(App):
     def build(self):
-        #Window.size = (1024, 600)
-        Window.fullscreen = True  # enable later
+        Window.allow_screensaver = False
+
+        # Helpful in kiosk/touch setups: prevent mouse hover artifacts
+        try:
+            Window.mouse_pos = (-1, -1)
+        except Exception:
+            pass
 
         store = AlarmStore(DB_PATH)
         mgr = AlarmManager(store)
