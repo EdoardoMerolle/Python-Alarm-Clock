@@ -10,8 +10,6 @@ ApplicationWindow {
     title: "Smart Display"
     color: "#000000"
 
-    cursorVisible: false
-
     property var editingAlarmId: null
 
     Connections {
@@ -123,14 +121,14 @@ ApplicationWindow {
                     id: hoursTumbler
                     model: 24
                     visibleItemCount: 3
-                    delegate: Text { text: String(modelData).padStart(2, '0'); color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; font.pixelSize: Tumbler.displacement === 0 ? 80 : 50; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 }
+                    delegate: Text { text: String(modelData).padStart(2, '0'); color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; font.pixelSize: Tumbler.displacement === 0 ? 60 : 40; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 }
                 }
                 Text { text: ":"; color: "white"; font.pixelSize: 80; font.bold: true }
                 Tumbler {
                     id: minutesTumbler
                     model: 60
                     visibleItemCount: 3
-                    delegate: Text { text: String(modelData).padStart(2, '0'); color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; font.pixelSize: Tumbler.displacement === 0 ? 80 : 50; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 }
+                    delegate: Text { text: String(modelData).padStart(2, '0'); color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; font.pixelSize: Tumbler.displacement === 0 ? 60 : 40; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 }
                 }
             }
             RowLayout {
