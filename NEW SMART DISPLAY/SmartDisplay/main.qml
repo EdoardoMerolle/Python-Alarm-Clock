@@ -4,10 +4,13 @@ import QtQuick.Layouts 1.15
 
 ApplicationWindow {
     visible: true
-    width: 1024
-    height: 600
+    visibility: Window.Fullscreen
+    // width: 1024
+    // height: 600
     title: "Smart Display"
     color: "#000000"
+
+    cursorVisible: false
 
     property var editingAlarmId: null
 
