@@ -20,8 +20,6 @@ ApplicationWindow {
     Item {
         id: slideshow
         anchors.fill: parent
-
-        // Night Mode: Hide slideshow (Black screen)
         opacity: backend.isNightMode ? 0.0 : 1.0 
         Behavior on opacity { NumberAnimation { duration: 1000 } }
 
@@ -36,16 +34,11 @@ ApplicationWindow {
             onTriggered: {
                 slideshow.currentIndex = (slideshow.currentIndex + 1) % slideshow.images.length
                 var nextSource = slideshow.images[slideshow.currentIndex]
-                
-                if (slideshow.showBg1) {
-                    bg2.source = nextSource
-                } else {
-                    bg1.source = nextSource
-                }
+                if (slideshow.showBg1) bg2.source = nextSource
+                else bg1.source = nextSource
                 slideshow.showBg1 = !slideshow.showBg1
             }
         }
-
         Image {
             id: bg1
             anchors.fill: parent
@@ -54,7 +47,6 @@ ApplicationWindow {
             opacity: slideshow.showBg1 ? 1.0 : 0.0 
             Behavior on opacity { NumberAnimation { duration: 2000 } } 
         }
-
         Image {
             id: bg2
             anchors.fill: parent
@@ -63,15 +55,14 @@ ApplicationWindow {
             opacity: slideshow.showBg1 ? 0.0 : 1.0 
             Behavior on opacity { NumberAnimation { duration: 2000 } }
         }
-
         Rectangle {
             anchors.fill: parent
             color: "black"
-            opacity: 0.2 
+            opacity: 0.3 
         }
     }
 
-    // --- ALARM ALERT POPUP ---
+    // --- POPUPS ---
     Popup {
         id: alarmPopup
         width: parent.width * 0.95
@@ -106,11 +97,9 @@ ApplicationWindow {
         }
     }
 
-    // --- TIME & DAY PICKER ---
     Popup {
         id: timePickerPopup
-        width: 700
-        height: 500
+        width: 700; height: 500
         anchors.centerIn: parent
         modal: true
         focus: true
@@ -121,13 +110,7 @@ ApplicationWindow {
             anchors.fill: parent
             anchors.margins: 35
             spacing: 20
-
-            Text {
-                text: editingAlarmId !== null ? "Edit Alarm" : "New Alarm"
-                color: "white"; font.pixelSize: 36; font.bold: true; Layout.alignment: Qt.AlignHCenter
-            }
-
-            // Time Wheels
+            Text { text: editingAlarmId !== null ? "Edit Alarm" : "New Alarm"; color: "white"; font.pixelSize: 36; font.bold: true; Layout.alignment: Qt.AlignHCenter }
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 20
@@ -145,11 +128,8 @@ ApplicationWindow {
                     delegate: Text { text: String(modelData).padStart(2, '0'); color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; font.pixelSize: Tumbler.displacement === 0 ? 80 : 50; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 }
                 }
             }
-
-            // Day Selector
             RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 15
+                Layout.alignment: Qt.AlignHCenter; spacing: 15
                 Repeater {
                     id: dayRepeater
                     model: ["M", "T", "W", "T", "F", "S", "S"]
@@ -162,7 +142,6 @@ ApplicationWindow {
                     }
                 }
             }
-
             Button {
                 text: "Save Alarm"
                 Layout.fillWidth: true; Layout.preferredHeight: 70
@@ -176,11 +155,137 @@ ApplicationWindow {
                     for(var i=0; i < dayRepeater.count; i++) { if(dayRepeater.itemAt(i).isSelected) selectedDays.push(i) }
                     var daysStr = selectedDays.join(",")
                     if(daysStr === "") daysStr = "Daily"
-
                     if (editingAlarmId !== null) { backend.updateAlarm(editingAlarmId, timeStr, daysStr) }
                     else { backend.createAlarm(timeStr, daysStr) }
                     timePickerPopup.close()
                 }
+            }
+        }
+    }
+
+    // --- DAY EVENT DETAILS POPUP (IMPROVED) ---
+    Popup {
+        id: dayDetailsPopup
+        width: 700
+        height: 550
+        anchors.centerIn: parent
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: "#1E1E1E"; radius: 25; border.color: "#4facfe"; border.width: 2 }
+        
+        property date selectedDate: new Date()
+        property var eventsForDay: []
+
+        ColumnLayout {
+            anchors.fill: parent
+            anchors.margins: 25
+            spacing: 15
+            
+            Text {
+                text: Qt.formatDate(dayDetailsPopup.selectedDate, "dddd, MMMM d")
+                color: "white"
+                font.pixelSize: 32
+                font.bold: true
+                Layout.alignment: Qt.AlignHCenter
+            }
+            
+            Rectangle { Layout.fillWidth: true; height: 1; color: "#444" }
+
+            ListView {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+                model: dayDetailsPopup.eventsForDay
+                spacing: 15
+                
+                delegate: Rectangle {
+                    width: parent.width
+                    // Dynamic height based on content
+                    height: detailsCol.implicitHeight + 30 
+                    color: "#333"
+                    radius: 10
+                    
+                    ColumnLayout {
+                        id: detailsCol
+                        anchors.fill: parent
+                        anchors.margins: 15
+                        spacing: 5
+
+                        // Row 1: Time and Title
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 15
+                            
+                            // Time Bubble
+                            Rectangle {
+                                color: "#4facfe"
+                                width: timeText.implicitWidth + 20
+                                height: 30
+                                radius: 15
+                                Text {
+                                    id: timeText
+                                    anchors.centerIn: parent
+                                    // Extract time: "Today, 10:00" -> "10:00"
+                                    text: modelData.date.includes(",") ? modelData.date.split(",")[1].trim() : modelData.date
+                                    color: "white"
+                                    font.bold: true
+                                    font.pixelSize: 16
+                                }
+                            }
+
+                            Text { 
+                                text: modelData.title
+                                color: "white"
+                                font.pixelSize: 22
+                                font.bold: true
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                        }
+
+                        // Row 2: Location (Only if exists)
+                        RowLayout {
+                            visible: modelData.location !== ""
+                            Layout.fillWidth: true
+                            Text {
+                                text: "📍 " + modelData.location
+                                color: "#AAAAAA"
+                                font.pixelSize: 18
+                                font.italic: true
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        // Row 3: Description (Only if exists)
+                        Text {
+                            visible: modelData.description !== ""
+                            text: modelData.description
+                            color: "#CCCCCC"
+                            font.pixelSize: 16
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                            Layout.topMargin: 5
+                        }
+                    }
+                }
+                
+                Text {
+                    visible: dayDetailsPopup.eventsForDay.length === 0
+                    text: "No events scheduled"
+                    color: "#666"
+                    font.pixelSize: 20
+                    anchors.centerIn: parent
+                }
+            }
+            
+            Button {
+                text: "Close"
+                Layout.fillWidth: true; Layout.preferredHeight: 50
+                background: Rectangle { color: "#333"; radius: 10 }
+                contentItem: Text { text: "Close"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                onClicked: dayDetailsPopup.close()
             }
         }
     }
@@ -191,61 +296,47 @@ ApplicationWindow {
         anchors.fill: parent
         currentIndex: 0 
 
-        // SCREEN 1: THE CLOCK
+        // PAGE 1: CLOCK
         Item {
             Rectangle {
-                id: clockBox
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
-                anchors.margins: 30
-                anchors.bottomMargin: 45 
-
-                // Dynamic width based on text
+                anchors.margins: 50
+                anchors.bottomMargin: 80 
                 width: clockLayout.width + 60 
                 height: clockLayout.height + 40
-                
-                // Remove background/border at night
                 color: backend.isNightMode ? "transparent" : "#AA000000"
                 radius: 25
                 border.color: backend.isNightMode ? "transparent" : "#33FFFFFF"
                 border.width: 1
-                
                 Behavior on color { ColorAnimation { duration: 500 } }
 
                 ColumnLayout {
                     id: clockLayout
                     anchors.centerIn: parent
                     spacing: -5
-                    
                     Text {
                         text: backend.currentTime
-                        // Red at night, White at day
                         color: backend.isNightMode ? "#FF3333" : "white"
-                        
-                        font.pixelSize: 90 // UPDATED TO 90
+                        font.pixelSize: 90
                         font.bold: true
-                        style: Text.Outline
-                        styleColor: "black"
+                        style: Text.Outline; styleColor: "black"
                         Layout.alignment: Qt.AlignLeft
-                        
                         Behavior on color { ColorAnimation { duration: 500 } }
                     }
-                    
                     Text {
                         text: Qt.formatDate(new Date(), "dddd, MMMM d")
                         color: backend.isNightMode ? "#990000" : "#EEEEEE"
-                        
-                        font.pixelSize: 20 // UPDATED TO 20
+                        font.pixelSize: 20
                         font.weight: Font.DemiBold
                         Layout.alignment: Qt.AlignLeft
-                        
                         Behavior on color { ColorAnimation { duration: 500 } }
                     }
                 }
             }
         }
 
-        // SCREEN 2: ALARM LIST
+        // PAGE 2: ALARMS
         Item {
             ListView {
                 id: alarmListView
@@ -254,25 +345,15 @@ ApplicationWindow {
                 model: backend.alarmList
 
                 header: Text { text: "Your Alarms"; color: "white"; font.pixelSize: 42; font.bold: true; bottomPadding: 20 }
-                
                 delegate: Rectangle {
-                    width: alarmListView.width
-                    height: 120
-                    color: "#CC222222"
-                    radius: 20
-                    border.color: modelData.active ? "#4facfe" : "#555"
-                    border.width: 2
-
+                    width: alarmListView.width; height: 120
+                    color: "#CC222222"; radius: 20
+                    border.color: modelData.active ? "#4facfe" : "#555"; border.width: 2
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 35; anchors.rightMargin: 35
-                        
                         ColumnLayout {
                             Layout.alignment: Qt.AlignVCenter; spacing: 4
-                            Text { 
-                                text: modelData.time
-                                color: modelData.active ? "white" : "#666"
-                                font.pixelSize: 54; font.bold: true
-                            }
+                            Text { text: modelData.time; color: modelData.active ? "white" : "#666"; font.pixelSize: 54; font.bold: true }
                             Text { 
                                 property var dayMap: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
                                 text: {
@@ -283,43 +364,31 @@ ApplicationWindow {
                                     for(var i=0; i<idxs.length; i++) labels.push(dayMap[parseInt(idxs[i])])
                                     return labels.join(", ")
                                 }
-                                color: modelData.active ? "#BBBBBB" : "#444"
-                                font.pixelSize: 20; font.weight: Font.Medium
+                                color: modelData.active ? "#BBBBBB" : "#444"; font.pixelSize: 20; font.weight: Font.Medium
                             }
                         }
-                        
                         Item { Layout.fillWidth: true } 
-
                         Switch {
                             id: alarmSwitch
-                            Layout.preferredWidth: 80
-                            Layout.preferredHeight: 40
+                            Layout.preferredWidth: 80; Layout.preferredHeight: 40
                             checked: modelData.active === 1
                             onToggled: backend.toggleAlarm(modelData.id, checked)
-
                             indicator: Item {
-                                implicitWidth: 80
-                                implicitHeight: 40
+                                implicitWidth: 80; implicitHeight: 40
                                 Rectangle {
-                                    anchors.fill: parent
-                                    radius: 20
+                                    anchors.fill: parent; radius: 20
                                     color: alarmSwitch.checked ? "#4facfe" : "#333"
-                                    border.color: alarmSwitch.checked ? "#4facfe" : "#555"
-                                    border.width: 1
+                                    border.color: alarmSwitch.checked ? "#4facfe" : "#555"; border.width: 1
                                     Behavior on color { ColorAnimation { duration: 200 } }
-                                    Behavior on border.color { ColorAnimation { duration: 200 } }
                                 }
                                 Rectangle {
-                                    x: alarmSwitch.checked ? parent.width - width - 6 : 6
-                                    y: 6
+                                    x: alarmSwitch.checked ? parent.width - width - 6 : 6; y: 6
                                     width: 28; height: 28; radius: 14; color: "white"
                                     Behavior on x { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
                                 }
                             }
                         }
-
                         Rectangle { width: 1; height: 50; color: "#444"; Layout.margins: 20 }
-
                         Button {
                             text: "✎"
                             Layout.preferredWidth: 50; Layout.preferredHeight: 50
@@ -337,18 +406,16 @@ ApplicationWindow {
                                 timePickerPopup.open()
                             }
                         }
-
                         Button {
                             text: "✕"
                             Layout.preferredWidth: 50; Layout.preferredHeight: 50
                             background: Rectangle { color: "transparent" }
-                            contentItem: Text { text: "✕"; color: "#FF4444"; font.pixelSize: 36; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                            contentItem: Text { text: "✕"; color: "white"; font.pixelSize: 32; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                             onClicked: backend.deleteAlarm(modelData.id)
                         }
                     }
                 }
             }
-
             Button {
                 width: 100; height: 100
                 anchors.bottom: parent.bottom; anchors.right: parent.right; anchors.margins: 40
@@ -361,6 +428,148 @@ ApplicationWindow {
                     minutesTumbler.currentIndex = now.getMinutes()
                     for(var i=0; i < dayRepeater.count; i++) dayRepeater.itemAt(i).isSelected = false
                     timePickerPopup.open()
+                }
+            }
+        }
+
+        // --- PAGE 3: CALENDAR GRID ---
+        Item {
+            id: calendarPage
+            
+            property date viewDate: new Date()
+            
+            function daysInMonth(anyDateInMonth) {
+                return new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth() + 1, 0).getDate();
+            }
+            
+            function firstDayOffset(anyDateInMonth) {
+                var d = new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth(), 1);
+                var day = d.getDay(); 
+                return day === 0 ? 6 : day - 1; 
+            }
+
+            function getCellDate(index) {
+                var firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+                var offset = firstDayOffset(firstDay);
+                return new Date(viewDate.getFullYear(), viewDate.getMonth(), 1 + (index - offset));
+            }
+
+            function getEventsForDate(dateObj) {
+                var dayEvents = []
+                if (!backend.calendarEvents) return dayEvents 
+                var checkStr = Qt.formatDate(dateObj, "yyyy-MM-dd")
+                
+                for(var i=0; i<backend.calendarEvents.length; i++) {
+                     var evIso = backend.calendarEvents[i].date_iso
+                     if (evIso.substring(0, 10) === checkStr) {
+                         dayEvents.push(backend.calendarEvents[i])
+                     }
+                }
+                return dayEvents
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 10
+
+                // Month Header
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 20
+                    Item { Layout.fillWidth: true } 
+                    Button {
+                        text: "◀"
+                        background: Rectangle { color: "#333"; radius: 5 }
+                        contentItem: Text { text: "◀"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: calendarPage.viewDate = new Date(calendarPage.viewDate.getFullYear(), calendarPage.viewDate.getMonth() - 1, 1)
+                    }
+                    Text {
+                        text: Qt.formatDate(calendarPage.viewDate, "MMMM yyyy")
+                        color: "white"
+                        font.pixelSize: 32
+                        font.bold: true
+                    }
+                    Button {
+                        text: "▶"
+                        background: Rectangle { color: "#333"; radius: 5 }
+                        contentItem: Text { text: "▶"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: calendarPage.viewDate = new Date(calendarPage.viewDate.getFullYear(), calendarPage.viewDate.getMonth() + 1, 1)
+                    }
+                    Item { Layout.fillWidth: true } 
+                }
+
+                // Days Header (Mon-Sun)
+                RowLayout {
+                    Layout.fillWidth: true
+                    Repeater {
+                        model: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                        Text {
+                            text: modelData
+                            color: "#888"
+                            font.bold: true
+                            font.pixelSize: 18
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                        }
+                    }
+                }
+
+                // Calendar Grid
+                GridLayout {
+                    columns: 7
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    columnSpacing: 5
+                    rowSpacing: 5
+
+                    Repeater {
+                        model: 42 
+                        
+                        Rectangle {
+                            property date myDate: calendarPage.getCellDate(index)
+                            property bool isCurrentMonth: myDate.getMonth() === calendarPage.viewDate.getMonth()
+                            property bool isToday: Qt.formatDate(myDate, "yyyy-MM-dd") === Qt.formatDate(new Date(), "yyyy-MM-dd")
+                            property var myEvents: calendarPage.getEventsForDate(myDate)
+                            
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            color: isToday ? "#334facfe" : (isCurrentMonth ? "#11FFFFFF" : "transparent") 
+                            radius: 5
+                            border.color: isToday ? "#4facfe" : "transparent"
+                            border.width: 1
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: myDate.getDate()
+                                color: isCurrentMonth ? "white" : "#444"
+                                font.pixelSize: 20
+                                font.bold: isToday
+                            }
+
+                            // Event Dot
+                            Rectangle {
+                                width: 8; height: 8
+                                radius: 4
+                                color: "#FF4444" 
+                                anchors.bottom: parent.bottom
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.bottomMargin: 8
+                                visible: myEvents.length > 0 && isCurrentMonth
+                            }
+                            
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (myEvents.length > 0) {
+                                        dayDetailsPopup.selectedDate = myDate
+                                        dayDetailsPopup.eventsForDay = myEvents
+                                        dayDetailsPopup.open()
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
