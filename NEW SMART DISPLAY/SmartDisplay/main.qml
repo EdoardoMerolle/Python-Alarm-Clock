@@ -127,7 +127,7 @@ ApplicationWindow {
                     delegate: Text { 
                         text: String(modelData).padStart(2, '0'); 
                         color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; 
-                        font.pixelSize: Tumbler.displacement === 0 ? 60 : 40; // FIX: Smaller text
+                        font.pixelSize: Tumbler.displacement === 0 ? 40 : 25; // FIX: Smaller text
                         font.bold: true; 
                         horizontalAlignment: Text.AlignHCenter; 
                         verticalAlignment: Text.AlignVCenter; 
@@ -147,7 +147,7 @@ ApplicationWindow {
                     delegate: Text { 
                         text: String(modelData).padStart(2, '0'); 
                         color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; 
-                        font.pixelSize: Tumbler.displacement === 0 ? 60 : 40; // FIX: Smaller text
+                        font.pixelSize: Tumbler.displacement === 0 ? 40 : 25; // FIX: Smaller text
                         font.bold: true; 
                         horizontalAlignment: Text.AlignHCenter; 
                         verticalAlignment: Text.AlignVCenter; 

@@ -1,3 +1,3 @@
 source .venv/bin/activate
 cd SmartDisplay
-python main.py
+python3 main.py
