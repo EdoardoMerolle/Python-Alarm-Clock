@@ -1,6 +1,6 @@
 import sys
 import os
-import random  # <--- NEW IMPORT
+import random
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -15,10 +15,12 @@ class SmartClockBackend(QObject):
     timeChanged = Signal()
     alarmTriggered = Signal(str)
     alarmsChanged = Signal()
+    nightModeChanged = Signal() # <--- NEW SIGNAL
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_time = ""
+        self._is_night_mode = False # <--- TRACK STATE
         
         database.init_db()
 
@@ -27,8 +29,9 @@ class SmartClockBackend(QObject):
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
         
+        # Robust path finding
         base_path = Path(__file__).resolve().parent
-        sound_path = base_path / "assets" / "sounds" / "alarm.mp3"
+        sound_path = base_path / "assets" / "alarm.mp3"
         
         self.player.setSource(QUrl.fromLocalFile(str(sound_path)))
         self.audio_output.setVolume(1.0)
@@ -53,20 +56,28 @@ class SmartClockBackend(QObject):
                     full_path = folder_path / file
                     image_urls.append(QUrl.fromLocalFile(str(full_path)).toString())
         
-        # FIX: Randomize the list instead of sorting it
-        random.shuffle(image_urls) 
-        
+        random.shuffle(image_urls)
         return image_urls
 
     def _tick(self):
         now = datetime.now()
         time_str = now.strftime("%H:%M")
         
+        # 1. Update Time
         if time_str != self._current_time:
             self._current_time = time_str
             self.timeChanged.emit()
             if now.second == 0:
                 self._check_alarms(now)
+
+        # 2. Check Night Mode (10 PM to 5 AM)
+        # Hour is 22, 23, 0, 1, 2, 3, 4
+        is_night = (now.hour >= 22 or now.hour < 5)
+        
+        if is_night != self._is_night_mode:
+            self._is_night_mode = is_night
+            self.nightModeChanged.emit()
+            print(f"Night Mode Changed: {is_night}")
 
     def _check_alarms(self, now_dt):
         current_time_str = now_dt.strftime("%H:%M")
@@ -87,6 +98,10 @@ class SmartClockBackend(QObject):
     @Property(str, notify=timeChanged)
     def currentTime(self):
         return self._current_time
+    
+    @Property(bool, notify=nightModeChanged)
+    def isNightMode(self):
+        return self._is_night_mode
 
     @Property(list, notify=alarmsChanged)
     def alarmList(self):
