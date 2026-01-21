@@ -55,10 +55,12 @@ ApplicationWindow {
             opacity: slideshow.showBg1 ? 0.0 : 1.0 
             Behavior on opacity { NumberAnimation { duration: 2000 } }
         }
+        
+        // Global light overlay (for clock visibility)
         Rectangle {
             anchors.fill: parent
             color: "black"
-            opacity: 0.3 
+            opacity: 0.2
         }
     }
 
@@ -163,7 +165,7 @@ ApplicationWindow {
         }
     }
 
-    // --- DAY EVENT DETAILS POPUP (IMPROVED) ---
+    // --- DAY EVENT DETAILS POPUP (FULL DETAILS) ---
     Popup {
         id: dayDetailsPopup
         width: 700
@@ -201,7 +203,6 @@ ApplicationWindow {
                 
                 delegate: Rectangle {
                     width: parent.width
-                    // Dynamic height based on content
                     height: detailsCol.implicitHeight + 30 
                     color: "#333"
                     radius: 10
@@ -212,12 +213,11 @@ ApplicationWindow {
                         anchors.margins: 15
                         spacing: 5
 
-                        // Row 1: Time and Title
+                        // Title & Time
                         RowLayout {
                             Layout.fillWidth: true
                             spacing: 15
                             
-                            // Time Bubble
                             Rectangle {
                                 color: "#4facfe"
                                 width: timeText.implicitWidth + 20
@@ -226,7 +226,6 @@ ApplicationWindow {
                                 Text {
                                     id: timeText
                                     anchors.centerIn: parent
-                                    // Extract time: "Today, 10:00" -> "10:00"
                                     text: modelData.date.includes(",") ? modelData.date.split(",")[1].trim() : modelData.date
                                     color: "white"
                                     font.bold: true
@@ -240,11 +239,11 @@ ApplicationWindow {
                                 font.pixelSize: 22
                                 font.bold: true
                                 Layout.fillWidth: true
-                                elide: Text.ElideRight
+                                wrapMode: Text.Wrap
                             }
                         }
 
-                        // Row 2: Location (Only if exists)
+                        // Location
                         RowLayout {
                             visible: modelData.location !== ""
                             Layout.fillWidth: true
@@ -258,7 +257,7 @@ ApplicationWindow {
                             }
                         }
 
-                        // Row 3: Description (Only if exists)
+                        // Description
                         Text {
                             visible: modelData.description !== ""
                             text: modelData.description
@@ -294,50 +293,16 @@ ApplicationWindow {
     SwipeView {
         id: swipeView
         anchors.fill: parent
-        currentIndex: 0 
+        currentIndex: 1
 
-        // PAGE 1: CLOCK
+        // PAGE 1: ALARMS (with Dark Background)
         Item {
+            // Dark Background Rectangle for Readability
             Rectangle {
-                anchors.left: parent.left
-                anchors.bottom: parent.bottom
-                anchors.margins: 50
-                anchors.bottomMargin: 80 
-                width: clockLayout.width + 60 
-                height: clockLayout.height + 40
-                color: backend.isNightMode ? "transparent" : "#AA000000"
-                radius: 25
-                border.color: backend.isNightMode ? "transparent" : "#33FFFFFF"
-                border.width: 1
-                Behavior on color { ColorAnimation { duration: 500 } }
-
-                ColumnLayout {
-                    id: clockLayout
-                    anchors.centerIn: parent
-                    spacing: -5
-                    Text {
-                        text: backend.currentTime
-                        color: backend.isNightMode ? "#FF3333" : "white"
-                        font.pixelSize: 90
-                        font.bold: true
-                        style: Text.Outline; styleColor: "black"
-                        Layout.alignment: Qt.AlignLeft
-                        Behavior on color { ColorAnimation { duration: 500 } }
-                    }
-                    Text {
-                        text: Qt.formatDate(new Date(), "dddd, MMMM d")
-                        color: backend.isNightMode ? "#990000" : "#EEEEEE"
-                        font.pixelSize: 20
-                        font.weight: Font.DemiBold
-                        Layout.alignment: Qt.AlignLeft
-                        Behavior on color { ColorAnimation { duration: 500 } }
-                    }
-                }
+                anchors.fill: parent
+                color: "#CC000000" // 80% opacity black
             }
-        }
 
-        // PAGE 2: ALARMS
-        Item {
             ListView {
                 id: alarmListView
                 anchors.fill: parent; anchors.margins: 30
@@ -431,10 +396,54 @@ ApplicationWindow {
                 }
             }
         }
+        // PAGE 2: CLOCK
+        Item {
+            Rectangle {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.margins: 30
+                anchors.bottomMargin: 60 
+                width: clockLayout.width + 60 
+                height: clockLayout.height + 40
+                color: backend.isNightMode ? "transparent" : "#AA000000"
+                radius: 25
+                border.color: backend.isNightMode ? "transparent" : "#33FFFFFF"
+                border.width: 1
+                Behavior on color { ColorAnimation { duration: 500 } }
 
-        // --- PAGE 3: CALENDAR GRID ---
+                ColumnLayout {
+                    id: clockLayout
+                    anchors.centerIn: parent
+                    spacing: -5
+                    Text {
+                        text: backend.currentTime
+                        color: backend.isNightMode ? "#FF3333" : "white"
+                        font.pixelSize: 90
+                        font.bold: true
+                        style: Text.Outline; styleColor: "black"
+                        Layout.alignment: Qt.AlignLeft
+                        Behavior on color { ColorAnimation { duration: 500 } }
+                    }
+                    Text {
+                        text: Qt.formatDate(new Date(), "dddd, MMMM d")
+                        color: backend.isNightMode ? "#990000" : "#EEEEEE"
+                        font.pixelSize: 20
+                        font.weight: Font.DemiBold
+                        Layout.alignment: Qt.AlignLeft
+                        Behavior on color { ColorAnimation { duration: 500 } }
+                    }
+                }
+            }
+        }
+// --- PAGE 2: CALENDAR GRID (with Dark Background) ---
         Item {
             id: calendarPage
+            
+            // Dark Background for Readability
+            Rectangle {
+                anchors.fill: parent
+                color: "#CC000000"
+            }
             
             property date viewDate: new Date()
             
@@ -515,7 +524,7 @@ ApplicationWindow {
                     }
                 }
 
-                // Calendar Grid
+                // Calendar Grid with Brief Details
                 GridLayout {
                     columns: 7
                     Layout.fillWidth: true
@@ -534,28 +543,79 @@ ApplicationWindow {
                             
                             Layout.fillWidth: true
                             Layout.fillHeight: true
-                            color: isToday ? "#334facfe" : (isCurrentMonth ? "#11FFFFFF" : "transparent") 
+                            color: isToday ? "#334facfe" : (isCurrentMonth ? "#22FFFFFF" : "transparent") 
                             radius: 5
                             border.color: isToday ? "#4facfe" : "transparent"
                             border.width: 1
+                            clip: true // Important: Cut off text if it gets too long
 
+                            // Day Number (Top Left)
                             Text {
-                                anchors.centerIn: parent
                                 text: myDate.getDate()
                                 color: isCurrentMonth ? "white" : "#444"
-                                font.pixelSize: 20
+                                font.pixelSize: 18
                                 font.bold: isToday
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.margins: 5
                             }
 
-                            // Event Dot
-                            Rectangle {
-                                width: 8; height: 8
-                                radius: 4
-                                color: "#FF4444" 
+                            // Brief Event List (Replaces Dot)
+                            Column {
+                                anchors.top: parent.top
+                                anchors.topMargin: 30 // Below date number
+                                anchors.left: parent.left
+                                anchors.right: parent.right
                                 anchors.bottom: parent.bottom
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.bottomMargin: 8
-                                visible: myEvents.length > 0 && isCurrentMonth
+                                anchors.margins: 2
+                                spacing: 2
+                                visible: isCurrentMonth
+
+                                Repeater {
+                                    // Show max 3 event bars per day to avoid clutter
+                                    model: myEvents.length > 3 ? myEvents.slice(0, 3) : myEvents
+                                    
+                                    Rectangle {
+                                        height: 12          // Increased slightly from 10 to 12 to fit text better
+                                        width: parent.width
+                                        color: "#4facfe"
+                                        radius: 6
+                                        
+                                        RowLayout {
+                                            anchors.fill: parent
+                                            anchors.leftMargin: 5
+                                            anchors.rightMargin: 5
+                                            spacing: 4
+
+                                            // 1. The Time (e.g. 14:00)
+                                            Text {
+                                                text: Qt.formatTime(new Date(modelData.date_iso), "hh:mm")
+                                                color: "#DAEFFF" // Slightly lighter/dimmer than title
+                                                font.pixelSize: 10
+                                                font.weight: Font.Normal
+                                            }
+
+                                            // 2. The Title (e.g. Meeting)
+                                            Text {
+                                                text: modelData.title
+                                                color: "white"
+                                                font.pixelSize: 10
+                                                font.bold: true
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Show "+" if more events exist
+                                Text {
+                                    visible: myEvents.length > 3
+                                    text: "+" + (myEvents.length - 3) + " more"
+                                    color: "#888"
+                                    font.pixelSize: 10
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                }
                             }
                             
                             MouseArea {
@@ -573,6 +633,8 @@ ApplicationWindow {
                 }
             }
         }
+
+        
     }
     
     PageIndicator {

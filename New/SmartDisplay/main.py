@@ -102,10 +102,9 @@ class SmartClockBackend(QObject):
             gcal = Calendar.from_ical(content)
             for component in gcal.walk():
                 if component.name == "VEVENT":
-                    # Extract Basic Info
                     summary = str(component.get('summary', 'No Title'))
                     
-                    # Extract Location & Description (Handle None safely)
+                    # EXTRACT DETAILS
                     location = component.get('location')
                     location = str(location) if location else ""
                     
@@ -114,16 +113,13 @@ class SmartClockBackend(QObject):
 
                     if component.get('dtstart'):
                         dtstart = component.get('dtstart').dt
-                        
-                        # Fix Date vs Datetime types
                         if isinstance(dtstart, date) and not isinstance(dtstart, datetime):
                             dtstart = datetime.combine(dtstart, datetime.min.time()).astimezone()
-                        
                         if dtstart.tzinfo is None:
                             dtstart = dtstart.astimezone()
 
-                        # Filter old events (keep recent past for context)
-                        if dtstart >= now - timedelta(days=1):
+                        # Filter: Show events from last year onwards
+                        if dtstart >= now - timedelta(days=60):
                             # Pretty Date String
                             if dtstart.date() == now.date():
                                 date_str = f"Today, {dtstart.strftime('%H:%M')}"
@@ -134,11 +130,11 @@ class SmartClockBackend(QObject):
 
                             events_list.append({
                                 "title": summary,
-                                "date": date_str,          
-                                "date_iso": dtstart.isoformat(), 
+                                "date": date_str,
+                                "date_iso": dtstart.isoformat(), # Helps QML match dates
                                 "sort_date": dtstart,
-                                "location": location,       # <--- NEW
-                                "description": description  # <--- NEW
+                                "location": location,
+                                "description": description
                             })
         except Exception as e:
             print(f"ICS Parse Error: {e}")
@@ -170,7 +166,8 @@ class SmartClockBackend(QObject):
                 self._check_alarms(now)
                 self._refresh_calendar()
 
-        is_night = (now.hour >= 22 or now.hour < 5)
+        #is_night = (now.hour >= 22 or now.hour < 5)
+        is_night = True
         if is_night != self._is_night_mode:
             self._is_night_mode = is_night
             self.nightModeChanged.emit()
