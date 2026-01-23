@@ -4,8 +4,9 @@ import QtQuick.Layouts 1.15
 
 ApplicationWindow {
     visible: true
-    width: 1024
-    height: 600
+    visibility: Window.FullScreen // Kiosk mode
+    // width: 1024 // Uncomment for desktop testing
+    // height: 600
     title: "Smart Display"
     color: "#000000"
 
@@ -64,7 +65,7 @@ ApplicationWindow {
         }
     }
 
-    // --- POPUPS ---
+    // --- ALARM TRIGGERED POPUP ---
     Popup {
         id: alarmPopup
         width: parent.width * 0.95
@@ -99,6 +100,7 @@ ApplicationWindow {
         }
     }
 
+    // --- ALARM EDIT/CREATE POPUP ---
     Popup {
         id: timePickerPopup
         width: 700; height: 500
@@ -113,6 +115,8 @@ ApplicationWindow {
             anchors.margins: 35
             spacing: 20
             Text { text: editingAlarmId !== null ? "Edit Alarm" : "New Alarm"; color: "white"; font.pixelSize: 36; font.bold: true; Layout.alignment: Qt.AlignHCenter }
+            
+            // Time Wheels (Corrected Font Sizes)
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter
                 spacing: 20
@@ -120,16 +124,39 @@ ApplicationWindow {
                     id: hoursTumbler
                     model: 24
                     visibleItemCount: 3
-                    delegate: Text { text: String(modelData).padStart(2, '0'); color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; font.pixelSize: Tumbler.displacement === 0 ? 80 : 50; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 }
+                    delegate: Text { 
+                        text: String(modelData).padStart(2, '0'); 
+                        color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; 
+                        font.pixelSize: Tumbler.displacement === 0 ? 40 : 25; // FIX: Smaller text
+                        font.bold: true; 
+                        horizontalAlignment: Text.AlignHCenter; 
+                        verticalAlignment: Text.AlignVCenter; 
+                        opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 
+                    }
                 }
-                Text { text: ":"; color: "white"; font.pixelSize: 80; font.bold: true }
+                Text { 
+                    text: ":"; 
+                    color: "white"; 
+                    font.pixelSize: 60; // FIX: Smaller separator
+                    font.bold: true 
+                }
                 Tumbler {
                     id: minutesTumbler
                     model: 60
                     visibleItemCount: 3
-                    delegate: Text { text: String(modelData).padStart(2, '0'); color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; font.pixelSize: Tumbler.displacement === 0 ? 80 : 50; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 }
+                    delegate: Text { 
+                        text: String(modelData).padStart(2, '0'); 
+                        color: Tumbler.displacement === 0 ? "#4facfe" : "#666"; 
+                        font.pixelSize: Tumbler.displacement === 0 ? 40 : 25; // FIX: Smaller text
+                        font.bold: true; 
+                        horizontalAlignment: Text.AlignHCenter; 
+                        verticalAlignment: Text.AlignVCenter; 
+                        opacity: 1.0 - Math.abs(Tumbler.displacement) / 2.0 
+                    }
                 }
             }
+
+            // Days Selection
             RowLayout {
                 Layout.alignment: Qt.AlignHCenter; spacing: 15
                 Repeater {
@@ -293,7 +320,7 @@ ApplicationWindow {
     SwipeView {
         id: swipeView
         anchors.fill: parent
-        currentIndex: 1
+        currentIndex: 1 // Default to center page (optional, usually 0 is clock)
 
         // PAGE 1: ALARMS (with Dark Background)
         Item {
@@ -396,6 +423,7 @@ ApplicationWindow {
                 }
             }
         }
+        
         // PAGE 2: CLOCK
         Item {
             Rectangle {
@@ -435,7 +463,8 @@ ApplicationWindow {
                 }
             }
         }
-// --- PAGE 2: CALENDAR GRID (with Dark Background) ---
+        
+        // PAGE 3: CALENDAR GRID (with Dark Background)
         Item {
             id: calendarPage
             
@@ -547,7 +576,7 @@ ApplicationWindow {
                             radius: 5
                             border.color: isToday ? "#4facfe" : "transparent"
                             border.width: 1
-                            clip: true // Important: Cut off text if it gets too long
+                            clip: true 
 
                             // Day Number (Top Left)
                             Text {
@@ -560,10 +589,10 @@ ApplicationWindow {
                                 anchors.margins: 5
                             }
 
-                            // Brief Event List (Replaces Dot)
+                            // Brief Event List
                             Column {
                                 anchors.top: parent.top
-                                anchors.topMargin: 30 // Below date number
+                                anchors.topMargin: 30 
                                 anchors.left: parent.left
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
@@ -572,11 +601,10 @@ ApplicationWindow {
                                 visible: isCurrentMonth
 
                                 Repeater {
-                                    // Show max 3 event bars per day to avoid clutter
                                     model: myEvents.length > 3 ? myEvents.slice(0, 3) : myEvents
                                     
                                     Rectangle {
-                                        height: 12          // Increased slightly from 10 to 12 to fit text better
+                                        height: 12  
                                         width: parent.width
                                         color: "#4facfe"
                                         radius: 6
@@ -587,15 +615,15 @@ ApplicationWindow {
                                             anchors.rightMargin: 5
                                             spacing: 4
 
-                                            // 1. The Time (e.g. 14:00)
+                                            // Time
                                             Text {
                                                 text: Qt.formatTime(new Date(modelData.date_iso), "hh:mm")
-                                                color: "#DAEFFF" // Slightly lighter/dimmer than title
+                                                color: "#DAEFFF" 
                                                 font.pixelSize: 10
                                                 font.weight: Font.Normal
                                             }
 
-                                            // 2. The Title (e.g. Meeting)
+                                            // Title
                                             Text {
                                                 text: modelData.title
                                                 color: "white"
@@ -633,8 +661,6 @@ ApplicationWindow {
                 }
             }
         }
-
-        
     }
     
     PageIndicator {
