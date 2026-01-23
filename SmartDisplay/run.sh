@@ -14,5 +14,4 @@ else
 fi
 
 # 3. Run the application
-cd SmartDisplay
 python main.py
