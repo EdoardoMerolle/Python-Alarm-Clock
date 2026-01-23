@@ -147,7 +147,7 @@ class SmartClockBackend(QObject):
     def imageList(self):
         image_urls = []
         base_path = Path(__file__).resolve().parent
-        folder_path = base_path / "assets" / "images"
+        #folder_path = base_path / "assets" / "images"
         if folder_path.exists():
             for file in os.listdir(folder_path):
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
