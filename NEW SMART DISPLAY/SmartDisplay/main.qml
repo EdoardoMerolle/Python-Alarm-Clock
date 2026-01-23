@@ -641,6 +641,6 @@ ApplicationWindow {
         count: swipeView.count; currentIndex: swipeView.currentIndex
         anchors.bottom: parent.bottom; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottomMargin: 20
         spacing: 15
-        delegate: Rectangle { width: 16; height: 16; radius: 8; color: index === swipeView.currentIndex ? "white" : "#66ffffff" }
+        delegate: Rectangle { width: 16; height: 16; radius: 8; color: index === swipeView.currentIndex ? (backend.isNightMode ? "#FF3333" : "white" ) : "#66ffffff" }
     }
 }
