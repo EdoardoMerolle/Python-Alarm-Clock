@@ -5,7 +5,6 @@ import threading
 import requests
 import json
 import asyncio
-import time
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
@@ -52,7 +51,9 @@ class SmartClockBackend(QObject):
         
         # --- ASYNC SETUP (Fix for Event Loop Error) ---
         self._bulb_device = None
+        # Create a new event loop for the background thread
         self.tapo_loop = asyncio.new_event_loop()
+        # Start the thread that will run the loop forever
         self.tapo_thread = threading.Thread(target=self._run_tapo_loop, daemon=True)
         self.tapo_thread.start()
         
@@ -90,11 +91,13 @@ class SmartClockBackend(QObject):
         self._tick()
 
     def _load_secrets(self):
-        secrets_path = Path(__file__).resolve().parent / "secrets.json"
+        # Look for secrets.json in the same folder as main.py
+        secrets_path = Path(__file__).resolve().parent / "assets/secrets.json"
         try:
             if secrets_path.exists():
                 with open(secrets_path, "r") as f:
                     return json.load(f)
+            print("WARNING: secrets.json not found.")
             return {}
         except: return {}
 
@@ -109,25 +112,26 @@ class SmartClockBackend(QObject):
 
     @Slot()
     def toggleLight(self):
-        # Optimistic UI update
+        # Optimistic UI update (feels instant)
         self._light_is_on = not self._light_is_on
         self.lightStateChanged.emit()
-        # Schedule the toggle on the persistent loop
+        # Schedule the toggle task on our permanent background loop
         asyncio.run_coroutine_threadsafe(self._async_tapo_toggle(), self.tapo_loop)
 
     def _check_light_status(self):
-        # Schedule status check
+        # Schedule status check on the background loop
         asyncio.run_coroutine_threadsafe(self._async_tapo_status(), self.tapo_loop)
 
     async def _get_bulb(self):
         """Gets the bulb device, reusing the connection if possible."""
+        # If we have a cached device, try to use it
         if self._bulb_device:
             return self._bulb_device
         
         if not self.TAPO_IP: return None
 
         try:
-            # Discover and connect
+            # Discover and connect using the IP
             dev = await Discover.discover_single(
                 self.TAPO_IP, 
                 username=self.TAPO_EMAIL, 
@@ -145,6 +149,8 @@ class SmartClockBackend(QObject):
         if not bulb: return
 
         try:
+            # We must update first to know the current state
+            await bulb.update()
             if bulb.is_on:
                 await bulb.turn_off()
                 self._light_is_on = False
@@ -154,18 +160,18 @@ class SmartClockBackend(QObject):
             self.lightStateChanged.emit()
         except Exception as e:
             print(f"Tapo Toggle Error: {e}")
-            self._bulb_device = None # Force reconnect next time
+            self._bulb_device = None # Force reconnect next time if this failed
 
     async def _async_tapo_status(self):
         bulb = await self._get_bulb()
         if not bulb: return
 
         try:
-            # We must explicitly update state from the device
+            # Explicitly ask the bulb for its status
             await bulb.update()
             real_state = bulb.is_on
             
-            # Only emit signal if state actually changed
+            # Only update UI if the state is different
             if self._light_is_on != real_state:
                 self._light_is_on = real_state
                 self.lightStateChanged.emit()
@@ -333,7 +339,7 @@ class SmartClockBackend(QObject):
             self._fetch_weather()
             
         # 3. Poll Tapo Light (Every 2 seconds)
-        # We use a simple counter or just modulus on seconds if the timer is 1000ms
+        # This keeps the display in sync if you use the app on your phone
         if self.TAPO_IP and now.second % 2 == 0:
             self._check_light_status()
 
