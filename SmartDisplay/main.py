@@ -3,6 +3,7 @@ import os
 import random
 import threading
 import requests
+import time
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
@@ -20,7 +21,12 @@ class SmartClockBackend(QObject):
     alarmTriggered = Signal(str)
     alarmsChanged = Signal()
     nightModeChanged = Signal()
-    calendarChanged = Signal() 
+    calendarChanged = Signal()
+    weatherChanged = Signal() # <--- NEW SIGNAL
+
+    # --- CONFIGURATION: SET YOUR LOCATION HERE ---
+    LATITUDE = 51.5074  # London
+    LONGITUDE = -0.1278
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -29,6 +35,11 @@ class SmartClockBackend(QObject):
         self._calendar_events = [] 
         self._is_fetching_calendar = False 
         
+        # Weather Data
+        self._weather_temp = "--"
+        self._weather_icon = "" 
+        self._weather_desc = "Loading..."
+        
         database.init_db()
 
         # Paths
@@ -36,6 +47,10 @@ class SmartClockBackend(QObject):
         self.cal_path = base_path / "assets" / "calendars"
         self.cal_path.mkdir(parents=True, exist_ok=True)
         self.cal_links_file = base_path / "assets" / "calendar_links.txt"
+        
+        # Weather Icon Path
+        self.weather_asset_path = base_path / "assets" / "weather"
+        self.weather_asset_path.mkdir(parents=True, exist_ok=True)
 
         # Audio Setup
         self.player = QMediaPlayer()
@@ -47,14 +62,76 @@ class SmartClockBackend(QObject):
         self.audio_output.setVolume(1.0)
         self.player.setLoops(QMediaPlayer.Loops.Infinite)
 
-        # Timer
+        # Timer (1 second tick)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(1000)
         
+        # Initial Loads
         self._refresh_calendar()
+        self._fetch_weather() # Initial fetch
         self._tick()
 
+    # --- WEATHER LOGIC ---
+    def _fetch_weather(self):
+        """Runs in a thread to fetch weather from OpenMeteo"""
+        thread = threading.Thread(target=self._worker_weather, daemon=True)
+        thread.start()
+
+    def _worker_weather(self):
+        try:
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={self.LATITUDE}&longitude={self.LONGITUDE}&current_weather=true"
+            response = requests.get(url, timeout=10)
+            if response.status_code == 200:
+                data = response.json().get("current_weather", {})
+                temp = data.get("temperature")
+                code = data.get("weathercode")
+                
+                self._weather_temp = f"{temp}°C"
+                self._weather_icon = self._get_icon_for_code(code)
+                self._weather_desc = self._get_desc_for_code(code)
+                self.weatherChanged.emit()
+        except Exception as e:
+            print(f"Weather Error: {e}")
+
+    def _get_icon_for_code(self, code):
+        """Maps WMO codes to local filenames in assets/weather/"""
+        filename = "cloudy.png" # Default fallback
+        
+        # Clear Sky: Check if it's night to show Moon or Sun
+        if code == 0: 
+            filename = "moon.png" if self._is_night_mode else "sun.png"
+            
+        elif code in [1, 2, 3]: filename = "cloudy.png"
+        elif code in [45, 48]: filename = "fog.png"
+        elif code in [51, 53, 55, 61, 63, 65, 80, 81, 82]: filename = "rain.png"
+        elif code in [71, 73, 75, 77, 85, 86]: filename = "snow.png"
+        elif code in [95, 96, 99]: filename = "storm.png"
+        
+        full_path = self.weather_asset_path / filename
+        if full_path.exists():
+            return QUrl.fromLocalFile(str(full_path)).toString()
+        return ""
+
+    def _get_desc_for_code(self, code):
+        if code == 0: return "Clear Sky"
+        if code in [1, 2, 3]: return "Cloudy"
+        if code in [45, 48]: return "Foggy"
+        if code in [51, 53, 55, 61, 63, 65]: return "Rain"
+        if code in [71, 73, 75, 77]: return "Snow"
+        if code >= 95: return "Storm"
+        return "Unknown"
+
+    @Property(str, notify=weatherChanged)
+    def weatherTemp(self): return self._weather_temp
+
+    @Property(str, notify=weatherChanged)
+    def weatherIcon(self): return self._weather_icon
+
+    @Property(str, notify=weatherChanged)
+    def weatherDesc(self): return self._weather_desc
+
+    # --- CALENDAR LOGIC ---
     def _refresh_calendar(self):
         if self._is_fetching_calendar: return
         self._is_fetching_calendar = True
@@ -90,7 +167,6 @@ class SmartClockBackend(QObject):
                             print(f"Error fetching {url}: {e}")
                 except Exception: pass
 
-            # Sort by the datetime object (sort_date)
             events.sort(key=lambda x: x['sort_date'])
             self._calendar_events = events 
             self.calendarChanged.emit()
@@ -103,13 +179,8 @@ class SmartClockBackend(QObject):
             for component in gcal.walk():
                 if component.name == "VEVENT":
                     summary = str(component.get('summary', 'No Title'))
-                    
-                    # EXTRACT DETAILS
-                    location = component.get('location')
-                    location = str(location) if location else ""
-                    
-                    description = component.get('description')
-                    description = str(description) if description else ""
+                    location = str(component.get('location', '')) if component.get('location') else ""
+                    description = str(component.get('description', '')) if component.get('description') else ""
 
                     if component.get('dtstart'):
                         dtstart = component.get('dtstart').dt
@@ -118,9 +189,7 @@ class SmartClockBackend(QObject):
                         if dtstart.tzinfo is None:
                             dtstart = dtstart.astimezone()
 
-                        # Filter: Show events from last year onwards
                         if dtstart >= now - timedelta(days=60):
-                            # Pretty Date String
                             if dtstart.date() == now.date():
                                 date_str = f"Today, {dtstart.strftime('%H:%M')}"
                             elif dtstart.date() == (now + timedelta(days=1)).date():
@@ -131,7 +200,7 @@ class SmartClockBackend(QObject):
                             events_list.append({
                                 "title": summary,
                                 "date": date_str,
-                                "date_iso": dtstart.isoformat(), # Helps QML match dates
+                                "date_iso": dtstart.isoformat(),
                                 "sort_date": dtstart,
                                 "location": location,
                                 "description": description
@@ -140,14 +209,13 @@ class SmartClockBackend(QObject):
             print(f"ICS Parse Error: {e}")
 
     @Property(list, notify=calendarChanged)
-    def calendarEvents(self):
-        return self._calendar_events
+    def calendarEvents(self): return self._calendar_events
 
     @Property(list, constant=True)
     def imageList(self):
         image_urls = []
         base_path = Path(__file__).resolve().parent
-        #folder_path = base_path / "assets" / "images"
+        folder_path = base_path / "assets" / "images"
         if folder_path.exists():
             for file in os.listdir(folder_path):
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
@@ -159,15 +227,18 @@ class SmartClockBackend(QObject):
     def _tick(self):
         now = datetime.now()
         time_str = now.strftime("%H:%M")
+        
         if time_str != self._current_time:
             self._current_time = time_str
             self.timeChanged.emit()
             if now.second == 0:
                 self._check_alarms(now)
                 self._refresh_calendar()
+                # Refresh weather every 15 minutes (at minute 0, 15, 30, 45)
+                if now.minute % 15 == 0:
+                    self._fetch_weather()
 
         is_night = (now.hour >= 22 or now.hour < 5)
-        #is_night = False
         if is_night != self._is_night_mode:
             self._is_night_mode = is_night
             self.nightModeChanged.emit()
@@ -197,8 +268,7 @@ class SmartClockBackend(QObject):
     def stopAlarm(self): self.player.stop()
 
     @Slot()
-    def closeApp(self):
-        sys.exit()
+    def closeApp(self): sys.exit()
 
     @Slot()
     def snoozeAlarm(self):
