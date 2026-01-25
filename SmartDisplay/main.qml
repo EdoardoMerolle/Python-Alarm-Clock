@@ -4,7 +4,7 @@ import QtQuick.Layouts 1.15
 
 ApplicationWindow {
     visible: true
-    visibility: Window.FullScreen
+    visibility: Window.FullScreen // Kiosk mode
     title: "Smart Display"
     color: "#000000"
 
@@ -396,6 +396,36 @@ ApplicationWindow {
                 }
             }
             
+            // --- NEW: LIGHT TEST BUTTON (Top Left) ---
+            Button {
+                width: 50
+                height: 50
+                anchors.top: parent.top
+                anchors.left: parent.left // Positioned top-left
+                anchors.margins: 20
+
+                background: Rectangle {
+                    // Glows yellow when on, semi-transparent black when off
+                    color: backend.lightIsOn ? "#CCFFCC00" : "#33000000"
+                    radius: width / 2
+                    border.color: backend.lightIsOn ? "#FFFF00" : "#33FFFFFF"
+                    border.width: 1
+                    Behavior on color { ColorAnimation { duration: 200 } }
+                }
+
+                contentItem: Text {
+                    text: "💡"
+                    color: "white"
+                    font.pixelSize: 24
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                    opacity: backend.lightIsOn ? 1.0 : 0.6
+                }
+
+                onClicked: backend.toggleLight()
+            }
+
+            // --- CLOSE BUTTON (Top Right) ---
             Button {
                 width: 50; height: 50
                 anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 20

@@ -1,3 +1,4 @@
 /SmartDisplay/.venv
 /SmartDisplay/assets/images
 /SmartDisplay/__pycache__
+/SmartDisplay/assets/secrets.json
