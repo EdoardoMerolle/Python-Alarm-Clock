@@ -197,6 +197,10 @@ class SmartClockBackend(QObject):
     def stopAlarm(self): self.player.stop()
 
     @Slot()
+    def closeApp(self):
+        sys.exit()
+
+    @Slot()
     def snoozeAlarm(self):
         self.player.stop()
         snooze_time = datetime.now() + timedelta(minutes=9)

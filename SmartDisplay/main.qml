@@ -462,6 +462,14 @@ ApplicationWindow {
                     }
                 }
             }
+            
+            Button {
+                width: 50; height: 50
+                anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 20
+                background: Rectangle { color: "#000000"; radius: 5; border.color: "white"; border.width: 2; layer.enabled: true }
+                contentItem: Text { text: "X"; color: "gray"; font.pixelSize: 20; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                onClicked: backend.closeApp()
+            }
         }
         
         // PAGE 3: CALENDAR GRID (with Dark Background)
