@@ -388,7 +388,7 @@ ApplicationWindow {
                     Text {
                         text: Qt.formatDate(new Date(), "dddd, MMMM d")
                         color: backend.isNightMode ? "#990000" : "#EEEEEE"
-                        font.pixelSize: 30
+                        font.pixelSize: 22
                         font.weight: Font.DemiBold
                         Layout.alignment: Qt.AlignLeft
                         Behavior on color { ColorAnimation { duration: 500 } }
