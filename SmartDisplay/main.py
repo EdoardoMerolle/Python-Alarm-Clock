@@ -104,31 +104,19 @@ class SmartClockBackend(QObject):
             return {}
         except: return {}
 
-    # --- SCREEN CONTROL LOGIC (FIXED) ---
+    # --- SCREEN CONTROL LOGIC (CLEANED) ---
     def _set_screen_power(self, on):
-        """Turns the screen ON or OFF using system commands."""
-        # 1. Try Hardware Command (vcgencmd) - Best for Pi Screen
+        """Turns the screen ON or OFF using vcgencmd (Hardware Control)."""
+        # '1' = ON, '0' = OFF
+        state = "1" if on else "0"
+        
+        # We only use vcgencmd because xset is failing on your Wayland system.
         try:
-            state = "1" if on else "0"
+            # This logs to console so we can see it working
+            print(f"DEBUG: Setting Screen Power to {state}") 
             subprocess.run(["vcgencmd", "display_power", state], check=False)
-        except: pass
-
-        # 2. Try X11 Command (xset) - Best for HDMI / X11
-        # We must explicitly ENABLE DPMS to turn it off, and DISABLE it to keep it on.
-        try:
-            env = os.environ.copy()
-            env["DISPLAY"] = ":0"
-            
-            if on:
-                # Waking up: Force ON, then Disable DPMS (so OS doesn't sleep it)
-                subprocess.run(["xset", "dpms", "force", "on"], env=env, check=False)
-                subprocess.run(["xset", "-dpms"], env=env, check=False)
-                subprocess.run(["xset", "s", "off"], env=env, check=False)
-            else:
-                # Sleeping: Enable DPMS (required to force off), then Force OFF
-                subprocess.run(["xset", "+dpms"], env=env, check=False)
-                subprocess.run(["xset", "dpms", "force", "off"], env=env, check=False)
-        except: pass
+        except Exception as e:
+            print(f"Screen Control Error: {e}")
 
     def _turn_off_screen(self):
         """Called by timer when 30s have passed."""
