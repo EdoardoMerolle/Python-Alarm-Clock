@@ -5,6 +5,7 @@ import threading
 import requests
 import json
 import asyncio
+import subprocess # <--- NEW: For xset screen control
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
@@ -80,6 +81,12 @@ class SmartClockBackend(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(1000)
+
+        # --- SCREEN BLANKING TIMER (NEW) ---
+        self._inactivity_timer = QTimer(self)
+        self._inactivity_timer.setInterval(30000) # 30 Seconds
+        self._inactivity_timer.setSingleShot(True)
+        self._inactivity_timer.timeout.connect(self._turn_off_screen)
         
         # --- 3. INITIAL LOADS ---
         if "latitude" not in self.secrets:
@@ -100,6 +107,34 @@ class SmartClockBackend(QObject):
             print("WARNING: secrets.json not found.")
             return {}
         except: return {}
+
+    # --- SCREEN CONTROL LOGIC (NEW) ---
+    def _set_screen_power(self, on):
+        """Turns the screen ON or OFF using xset."""
+        state = "on" if on else "off"
+        try:
+            env = os.environ.copy()
+            env["DISPLAY"] = ":0" # Target the local display
+            subprocess.run(["xset", "dpms", "force", state], env=env, check=False)
+        except Exception as e:
+            print(f"Screen Power Error: {e}")
+
+    def _turn_off_screen(self):
+        """Called by timer when 30s have passed."""
+        if self._is_night_mode:
+            self._set_screen_power(False)
+
+    @Slot()
+    def resetInactivityTimer(self):
+        """Called from QML on any touch event."""
+        # 1. Ensure screen is ON (in case it was off)
+        self._set_screen_power(True)
+        
+        # 2. If it's night, restart the countdown. If day, stop it.
+        if self._is_night_mode:
+            self._inactivity_timer.start()
+        else:
+            self._inactivity_timer.stop()
 
     # --- TAPO LIGHT LOGIC (FIXED) ---
     def _run_tapo_loop(self):
@@ -332,12 +367,21 @@ class SmartClockBackend(QObject):
                     self._fetch_weather()
 
         # 2. Update Night Mode
-
-        is_night = (now.hour >= 22 or now.hour < 5)
+        #is_night = (now.hour >= 22 or now.hour < 5)
+        is_night = True
         if is_night != self._is_night_mode:
             self._is_night_mode = is_night
             self.nightModeChanged.emit()
             self._fetch_weather()
+            
+            # --- Night Mode State Change Logic ---
+            if is_night:
+                # Entered Night Mode: Start the inactivity timer
+                self.resetInactivityTimer()
+            else:
+                # Exited Night Mode: Force screen ON and stop timer
+                self._inactivity_timer.stop()
+                self._set_screen_power(True)
             
         # 3. Poll Tapo Light (Every 2 seconds)
         # This keeps the display in sync if you use the app on your phone
@@ -354,6 +398,8 @@ class SmartClockBackend(QObject):
                 if days == "Daily" or current_weekday in days.split(","):
                     if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
                         self.player.play()
+                        # Ensure screen is ON when alarm rings
+                        self._set_screen_power(True)
                     self.alarmTriggered.emit("Wake Up!")
 
     @Property(str, notify=timeChanged)

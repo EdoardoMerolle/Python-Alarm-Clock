@@ -540,4 +540,16 @@ ApplicationWindow {
         spacing: 15
         delegate: Rectangle { width: 16; height: 16; radius: 8; color: index === swipeView.currentIndex ? "white" : "#66ffffff" }
     }
+
+    // --- GLOBAL ACTIVITY DETECTOR (NEW) ---
+    // This catches every click/tap to reset the inactivity timer
+    MouseArea {
+        anchors.fill: parent
+        z: 99999 // Ensure it is on top of everything
+        propagateComposedEvents: true // Allows clicks to pass through to underlying buttons
+        onPressed: {
+            backend.resetInactivityTimer()
+            mouse.accepted = false // Pass the event down so buttons still work
+        }
+    }
 }
