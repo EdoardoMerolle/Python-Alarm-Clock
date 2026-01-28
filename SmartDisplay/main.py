@@ -350,7 +350,8 @@ class SmartClockBackend(QObject):
                 if now.minute % 15 == 0: self._fetch_weather()
 
         # Update Night Mode logic
-        is_night = (now.hour >= 22 or now.hour < 5)
+        #is_night = (now.hour >= 22 or now.hour < 5)
+        is_night = False
         
         if is_night != self._is_night_mode:
             self._is_night_mode = is_night
