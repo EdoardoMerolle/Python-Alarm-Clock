@@ -5,7 +5,7 @@ import threading
 import requests
 import json
 import asyncio
-import subprocess
+import subprocess # <--- NEW: For xset screen control
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
@@ -50,9 +50,11 @@ class SmartClockBackend(QObject):
         self._weather_desc = "Loading..."
         self._light_is_on = False
         
-        # --- ASYNC SETUP ---
+        # --- ASYNC SETUP (Fix for Event Loop Error) ---
         self._bulb_device = None
+        # Create a new event loop for the background thread
         self.tapo_loop = asyncio.new_event_loop()
+        # Start the thread that will run the loop forever
         self.tapo_thread = threading.Thread(target=self._run_tapo_loop, daemon=True)
         self.tapo_thread.start()
         
@@ -75,12 +77,12 @@ class SmartClockBackend(QObject):
         self.audio_output.setVolume(1.0)
         self.player.setLoops(QMediaPlayer.Loops.Infinite)
 
-        # Timer (Clock Tick)
+        # Timer
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(1000)
 
-        # --- SCREEN BLANKING TIMER ---
+        # --- SCREEN BLANKING TIMER (NEW) ---
         self._inactivity_timer = QTimer(self)
         self._inactivity_timer.setInterval(30000) # 30 Seconds
         self._inactivity_timer.setSingleShot(True)
@@ -96,27 +98,26 @@ class SmartClockBackend(QObject):
         self._tick()
 
     def _load_secrets(self):
+        # Look for secrets.json in the same folder as main.py
         secrets_path = Path(__file__).resolve().parent / "assets/secrets.json"
         try:
             if secrets_path.exists():
                 with open(secrets_path, "r") as f:
                     return json.load(f)
+            print("WARNING: secrets.json not found.")
             return {}
         except: return {}
 
-    # --- SCREEN CONTROL LOGIC (CLEANED) ---
+    # --- SCREEN CONTROL LOGIC (NEW) ---
     def _set_screen_power(self, on):
-        """Turns the screen ON or OFF using vcgencmd (Hardware Control)."""
-        # '1' = ON, '0' = OFF
-        state = "1" if on else "0"
-        
-        # We only use vcgencmd because xset is failing on your Wayland system.
+        """Turns the screen ON or OFF using xset."""
+        state = "on" if on else "off"
         try:
-            # This logs to console so we can see it working
-            print(f"DEBUG: Setting Screen Power to {state}") 
-            subprocess.run(["vcgencmd", "display_power", state], check=False)
+            env = os.environ.copy()
+            env["DISPLAY"] = ":0" # Target the local display
+            subprocess.run(["xset", "dpms", "force", state], env=env, check=False)
         except Exception as e:
-            print(f"Screen Control Error: {e}")
+            print(f"Screen Power Error: {e}")
 
     def _turn_off_screen(self):
         """Called by timer when 30s have passed."""
@@ -126,17 +127,18 @@ class SmartClockBackend(QObject):
     @Slot()
     def resetInactivityTimer(self):
         """Called from QML on any touch event."""
-        # 1. Always wake up the screen first
+        # 1. Ensure screen is ON (in case it was off)
         self._set_screen_power(True)
         
-        # 2. Only restart the 'sleep' timer if it is Night Mode
+        # 2. If it's night, restart the countdown. If day, stop it.
         if self._is_night_mode:
             self._inactivity_timer.start()
         else:
             self._inactivity_timer.stop()
 
-    # --- TAPO LIGHT LOGIC ---
+    # --- TAPO LIGHT LOGIC (FIXED) ---
     def _run_tapo_loop(self):
+        """Runs a permanent event loop in a background thread."""
         asyncio.set_event_loop(self.tapo_loop)
         self.tapo_loop.run_forever()
 
@@ -145,17 +147,26 @@ class SmartClockBackend(QObject):
 
     @Slot()
     def toggleLight(self):
+        # Optimistic UI update (feels instant)
         self._light_is_on = not self._light_is_on
         self.lightStateChanged.emit()
+        # Schedule the toggle task on our permanent background loop
         asyncio.run_coroutine_threadsafe(self._async_tapo_toggle(), self.tapo_loop)
 
     def _check_light_status(self):
+        # Schedule status check on the background loop
         asyncio.run_coroutine_threadsafe(self._async_tapo_status(), self.tapo_loop)
 
     async def _get_bulb(self):
-        if self._bulb_device: return self._bulb_device
+        """Gets the bulb device, reusing the connection if possible."""
+        # If we have a cached device, try to use it
+        if self._bulb_device:
+            return self._bulb_device
+        
         if not self.TAPO_IP: return None
+
         try:
+            # Discover and connect using the IP
             dev = await Discover.discover_single(
                 self.TAPO_IP, 
                 username=self.TAPO_EMAIL, 
@@ -164,12 +175,16 @@ class SmartClockBackend(QObject):
             await dev.update()
             self._bulb_device = dev
             return dev
-        except: return None
+        except Exception as e:
+            print(f"Tapo Connect Error: {e}")
+            return None
 
     async def _async_tapo_toggle(self):
         bulb = await self._get_bulb()
         if not bulb: return
+
         try:
+            # We must update first to know the current state
             await bulb.update()
             if bulb.is_on:
                 await bulb.turn_off()
@@ -178,19 +193,28 @@ class SmartClockBackend(QObject):
                 await bulb.turn_on()
                 self._light_is_on = True
             self.lightStateChanged.emit()
-        except: self._bulb_device = None
+        except Exception as e:
+            print(f"Tapo Toggle Error: {e}")
+            self._bulb_device = None # Force reconnect next time if this failed
 
     async def _async_tapo_status(self):
         bulb = await self._get_bulb()
         if not bulb: return
-        try:
-            await bulb.update()
-            if self._light_is_on != bulb.is_on:
-                self._light_is_on = bulb.is_on
-                self.lightStateChanged.emit()
-        except: self._bulb_device = None
 
-    # --- LOCATION & WEATHER ---
+        try:
+            # Explicitly ask the bulb for its status
+            await bulb.update()
+            real_state = bulb.is_on
+            
+            # Only update UI if the state is different
+            if self._light_is_on != real_state:
+                self._light_is_on = real_state
+                self.lightStateChanged.emit()
+        except Exception as e:
+            print(f"Tapo Status Error: {e}")
+            self._bulb_device = None # Force reconnect next time
+
+    # --- LOCATION DETECTION ---
     def _detect_location(self):
         threading.Thread(target=self._worker_location, daemon=True).start()
 
@@ -205,6 +229,7 @@ class SmartClockBackend(QObject):
                     self._fetch_weather()
         except: pass
 
+    # --- WEATHER LOGIC ---
     def _fetch_weather(self):
         threading.Thread(target=self._worker_weather, daemon=True).start()
 
@@ -214,22 +239,29 @@ class SmartClockBackend(QObject):
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
                 data = response.json().get("current_weather", {})
-                self._weather_temp = f"{data.get('temperature')}°C"
-                self._weather_icon = self._get_icon_for_code(data.get("weathercode"))
-                self._weather_desc = self._get_desc_for_code(data.get("weathercode"))
+                temp = data.get("temperature")
+                code = data.get("weathercode")
+                
+                self._weather_temp = f"{temp}°C"
+                self._weather_icon = self._get_icon_for_code(code)
+                self._weather_desc = self._get_desc_for_code(code)
                 self.weatherChanged.emit()
         except: pass
 
     def _get_icon_for_code(self, code):
         filename = "cloudy.png"
-        if code == 0: filename = "moon.png" if self._is_night_mode else "sun.png"
+        if code == 0: 
+            filename = "moon.png" if self._is_night_mode else "sun.png"
         elif code in [1, 2, 3]: filename = "cloudy.png"
         elif code in [45, 48]: filename = "fog.png"
         elif code in [51, 53, 55, 61, 63, 65, 80, 81, 82]: filename = "rain.png"
         elif code in [71, 73, 75, 77, 85, 86]: filename = "snow.png"
         elif code in [95, 96, 99]: filename = "storm.png"
-        path = self.weather_asset_path / filename
-        return QUrl.fromLocalFile(str(path)).toString() if path.exists() else ""
+        
+        full_path = self.weather_asset_path / filename
+        if full_path.exists():
+            return QUrl.fromLocalFile(str(full_path)).toString()
+        return ""
 
     def _get_desc_for_code(self, code):
         if code == 0: return "Clear Sky"
@@ -242,12 +274,14 @@ class SmartClockBackend(QObject):
 
     @Property(str, notify=weatherChanged)
     def weatherTemp(self): return self._weather_temp
+
     @Property(str, notify=weatherChanged)
     def weatherIcon(self): return self._weather_icon
+
     @Property(str, notify=weatherChanged)
     def weatherDesc(self): return self._weather_desc
 
-    # --- CALENDAR ---
+    # --- CALENDAR LOGIC ---
     def _refresh_calendar(self):
         if self._is_fetching_calendar: return
         self._is_fetching_calendar = True
@@ -261,21 +295,25 @@ class SmartClockBackend(QObject):
                 for file in os.listdir(self.cal_path):
                     if file.lower().endswith(".ics"):
                         try:
-                            with open(self.cal_path / file, 'rb') as f: self._parse_ical_data(f.read(), events, now)
+                            with open(self.cal_path / file, 'rb') as f:
+                                self._parse_ical_data(f.read(), events, now)
                         except: pass
             if self.cal_links_file.exists():
                 try:
-                    with open(self.cal_links_file, 'r') as f: urls = [l.strip() for l in f if l.strip()]
+                    with open(self.cal_links_file, 'r') as f:
+                        urls = [line.strip() for line in f if line.strip()]
                     for url in urls:
                         try:
                             r = requests.get(url, timeout=5)
-                            if r.status_code == 200: self._parse_ical_data(r.content, events, now)
+                            if r.status_code == 200:
+                                self._parse_ical_data(r.content, events, now)
                         except: pass
                 except: pass
             events.sort(key=lambda x: x['sort_date'])
             self._calendar_events = events 
             self.calendarChanged.emit()
-        finally: self._is_fetching_calendar = False
+        finally:
+            self._is_fetching_calendar = False
 
     def _parse_ical_data(self, content, events_list, now):
         try:
@@ -289,7 +327,8 @@ class SmartClockBackend(QObject):
                         dtstart = component.get('dtstart').dt
                         if isinstance(dtstart, date) and not isinstance(dtstart, datetime):
                             dtstart = datetime.combine(dtstart, datetime.min.time()).astimezone()
-                        if dtstart.tzinfo is None: dtstart = dtstart.astimezone()
+                        if dtstart.tzinfo is None:
+                            dtstart = dtstart.astimezone()
                         if dtstart >= now - timedelta(days=60):
                             if dtstart.date() == now.date(): date_str = f"Today, {dtstart.strftime('%H:%M')}"
                             elif dtstart.date() == (now + timedelta(days=1)).date(): date_str = f"Tomorrow, {dtstart.strftime('%H:%M')}"
@@ -317,42 +356,50 @@ class SmartClockBackend(QObject):
         now = datetime.now()
         time_str = now.strftime("%H:%M")
         
+        # 1. Update Time
         if time_str != self._current_time:
             self._current_time = time_str
             self.timeChanged.emit()
             if now.second == 0:
                 self._check_alarms(now)
                 self._refresh_calendar()
-                if now.minute % 15 == 0: self._fetch_weather()
+                if now.minute % 15 == 0:
+                    self._fetch_weather()
 
-        # Update Night Mode logic
+        # 2. Update Night Mode
         is_night = (now.hour >= 22 or now.hour < 5)
-        
+        #is_night = True
         if is_night != self._is_night_mode:
             self._is_night_mode = is_night
             self.nightModeChanged.emit()
             self._fetch_weather()
             
-            # --- NIGHT MODE TRANSITION ---
+            # --- Night Mode State Change Logic ---
             if is_night:
-                # Entering Night Mode: Start the 30s countdown
+                # Entered Night Mode: Start the inactivity timer
                 self.resetInactivityTimer()
             else:
-                # Exiting Night Mode: Stop countdown, Force screen ON
+                # Exited Night Mode: Force screen ON and stop timer
                 self._inactivity_timer.stop()
                 self._set_screen_power(True)
-
-        if self.TAPO_IP and now.second % 2 == 0: self._check_light_status()
+            
+        # 3. Poll Tapo Light (Every 2 seconds)
+        # This keeps the display in sync if you use the app on your phone
+        if self.TAPO_IP and now.second % 2 == 0:
+            self._check_light_status()
 
     def _check_alarms(self, now_dt):
         current_time_str = now_dt.strftime("%H:%M")
         current_weekday = str(now_dt.weekday()) 
-        for alarm in database.get_active_alarms():
+        active_alarms = database.get_active_alarms()
+        for alarm in active_alarms:
             if alarm['time'] == current_time_str:
-                if alarm['days'] == "Daily" or current_weekday in alarm['days'].split(","):
-                    if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState: 
+                days = alarm['days'] 
+                if days == "Daily" or current_weekday in days.split(","):
+                    if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
                         self.player.play()
-                        self._set_screen_power(True) # Force screen ON for alarm
+                        # Ensure screen is ON when alarm rings
+                        self._set_screen_power(True)
                     self.alarmTriggered.emit("Wake Up!")
 
     @Property(str, notify=timeChanged)
@@ -368,8 +415,8 @@ class SmartClockBackend(QObject):
     @Slot()
     def snoozeAlarm(self):
         self.player.stop()
-        new_time = (datetime.now() + timedelta(minutes=9)).strftime("%H:%M")
-        database.add_alarm(new_time, str(datetime.now().weekday()))
+        new_time_str = (datetime.now() + timedelta(minutes=9)).strftime("%H:%M")
+        database.add_alarm(new_time_str, str(datetime.now().weekday()))
         self.alarmsChanged.emit()
     @Slot(int)
     def deleteAlarm(self, id):
@@ -386,7 +433,7 @@ class SmartClockBackend(QObject):
 
 if __name__ == "__main__":
     app = QGuiApplication(sys.argv)
-    app.setOverrideCursor(Qt.BlankCursor) # Hide mouse
+    app.setOverrideCursor(Qt.BlankCursor)
     engine = QQmlApplicationEngine()
     backend = SmartClockBackend(app)
     engine.backend_reference = backend 
