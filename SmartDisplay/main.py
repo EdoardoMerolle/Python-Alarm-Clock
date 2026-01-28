@@ -14,7 +14,7 @@ from kasa import Discover
 
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
-from PySide6.QtCore import QObject, Signal, Property, QTimer, Slot, QUrl
+from PySide6.QtCore import QObject, Signal, Property, QTimer, Slot, QUrl, Qt
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 
 import database
@@ -432,6 +432,7 @@ class SmartClockBackend(QObject):
 
 if __name__ == "__main__":
     app = QGuiApplication(sys.argv)
+    app.setOverrideCursor(Qt.BlankCursor)
     engine = QQmlApplicationEngine()
     backend = SmartClockBackend(app)
     engine.backend_reference = backend 
