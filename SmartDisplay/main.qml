@@ -80,18 +80,18 @@ ApplicationWindow {
             RowLayout {
                 spacing: 60
                 Button {
-                    text: "SNOOZE"
-                    Layout.preferredWidth: 260; Layout.preferredHeight: 100
-                    background: Rectangle { color: "#444444"; radius: 15; border.color: "#666"; border.width: 2 }
-                    contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 32; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                    onClicked: { alarmPopup.close(); backend.snoozeAlarm() }
-                }
-                Button {
                     text: "DISMISS"
                     Layout.preferredWidth: 260; Layout.preferredHeight: 100
                     background: Rectangle { color: "#CC0000"; radius: 15; border.color: "#FF5555"; border.width: 2 }
                     contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 32; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     onClicked: { alarmPopup.close(); backend.stopAlarm() }
+                }
+                Button {
+                    text: "SNOOZE"
+                    Layout.preferredWidth: 260; Layout.preferredHeight: 100
+                    background: Rectangle { color: "#444444"; radius: 15; border.color: "#666"; border.width: 2 }
+                    contentItem: Text { text: parent.text; color: "white"; font.pixelSize: 32; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                    onClicked: { alarmPopup.close(); backend.snoozeAlarm() }
                 }
             }
         }

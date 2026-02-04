@@ -2,3 +2,4 @@
 /SmartDisplay/assets/images
 /SmartDisplay/__pycache__
 /SmartDisplay/assets/secrets.json
+SmartDisplay/alarms.db
