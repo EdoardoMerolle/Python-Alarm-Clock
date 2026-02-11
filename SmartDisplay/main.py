@@ -416,7 +416,7 @@ class SmartClockBackend(QObject):
         if self._active_alarm_id is None:
             return
         self._snoozed_alarm_id = self._active_alarm_id
-        self._snooze_until = (datetime.now() + timedelta(minutes=1)).replace(second=0, microsecond=0)
+        self._snooze_until = (datetime.now() + timedelta(minutes=9)).replace(second=0, microsecond=0)
         self._active_alarm_id = None
         self.snoozeChanged.emit()
     @Slot(int)
