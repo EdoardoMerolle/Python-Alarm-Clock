@@ -27,6 +27,7 @@ class SmartClockBackend(QObject):
     calendarChanged = Signal()
     weatherChanged = Signal()
     lightStateChanged = Signal()
+    snoozeChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -49,6 +50,9 @@ class SmartClockBackend(QObject):
         self._weather_icon = "" 
         self._weather_desc = "Loading..."
         self._light_is_on = False
+        self._active_alarm_id = None
+        self._snoozed_alarm_id = None
+        self._snooze_until = None
         
         # --- ASYNC SETUP ---
         self._bulb_device = None
@@ -369,9 +373,21 @@ class SmartClockBackend(QObject):
     def _check_alarms(self, now_dt):
         current_time_str = now_dt.strftime("%H:%M")
         current_weekday = str(now_dt.weekday()) 
+
+        if self._snooze_until and now_dt.replace(second=0, microsecond=0) == self._snooze_until:
+            self._active_alarm_id = self._snoozed_alarm_id
+            self._snoozed_alarm_id = None
+            self._snooze_until = None
+            self.snoozeChanged.emit()
+            if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+                self.player.play()
+                self._set_screen_power(True)
+            self.alarmTriggered.emit("Wake Up!")
+
         for alarm in database.get_active_alarms():
             if alarm['time'] == current_time_str:
                 if alarm['days'] == "Daily" or current_weekday in alarm['days'].split(","):
+                    self._active_alarm_id = alarm['id']
                     if self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState: 
                         self.player.play()
                         self._set_screen_power(True) 
@@ -381,23 +397,39 @@ class SmartClockBackend(QObject):
     def currentTime(self): return self._current_time
     @Property(bool, notify=nightModeChanged)
     def isNightMode(self): return self._is_night_mode
+    @Property(str, notify=snoozeChanged)
+    def snoozeStatus(self):
+        if self._snooze_until is None:
+            return ""
+        return f"Snoozed until {self._snooze_until.strftime('%H:%M')}"
     @Property(list, notify=alarmsChanged)
     def alarmList(self): return database.get_all_alarms()
     @Slot()
-    def stopAlarm(self): self.player.stop()
+    def stopAlarm(self):
+        self.player.stop()
+        self._active_alarm_id = None
     @Slot()
     def closeApp(self): sys.exit()
     @Slot()
     def snoozeAlarm(self):
         self.player.stop()
-        new_time_str = (datetime.now() + timedelta(minutes=9)).strftime("%H:%M")
-        database.add_alarm(new_time_str, str(datetime.now().weekday()))
-        self.alarmsChanged.emit()
+        if self._active_alarm_id is None:
+            return
+        self._snoozed_alarm_id = self._active_alarm_id
+        self._snooze_until = (datetime.now() + timedelta(minutes=1)).replace(second=0, microsecond=0)
+        self._active_alarm_id = None
+        self.snoozeChanged.emit()
     @Slot(int)
     def deleteAlarm(self, id):
         conn = database.get_connection()
         conn.execute("DELETE FROM alarms WHERE id = ?", (id,))
         conn.commit(); conn.close()
+        if self._active_alarm_id == id:
+            self._active_alarm_id = None
+        if self._snoozed_alarm_id == id:
+            self._snoozed_alarm_id = None
+            self._snooze_until = None
+            self.snoozeChanged.emit()
         self.alarmsChanged.emit()
     @Slot(str, str)
     def createAlarm(self, t, d): database.add_alarm(t, d); self.alarmsChanged.emit()

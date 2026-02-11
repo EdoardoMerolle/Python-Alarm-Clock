@@ -393,6 +393,14 @@ ApplicationWindow {
                         Layout.alignment: Qt.AlignLeft
                         Behavior on color { ColorAnimation { duration: 500 } }
                     }
+                    Text {
+                        text: backend.snoozeStatus
+                        visible: backend.snoozeStatus !== ""
+                        color: backend.isNightMode ? "#FF8888" : "#FFD166"
+                        font.pixelSize: 20
+                        font.bold: true
+                        Layout.alignment: Qt.AlignLeft
+                    }
                 }
             }
             
