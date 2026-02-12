@@ -77,6 +77,8 @@ class SmartClockBackend(QObject):
         self._spotify_status = "Not Connected"
         self._spotify_poll_count = 0
         self._spotify_lock = threading.Lock()
+        self._spotify_poll_lock = threading.Lock()
+        self._spotify_poll_inflight = False
         
         # --- ASYNC SETUP ---
         self._bulb_device = None
@@ -411,7 +413,11 @@ class SmartClockBackend(QObject):
     def _spotify_request(self, method, endpoint, params=None, json_body=None, data=None, retry=True):
         if not self._spotify_ensure_access_token():
             return None
-        headers = {"Authorization": f"Bearer {self._spotify_access_token}"}
+        headers = {
+            "Authorization": f"Bearer {self._spotify_access_token}",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache"
+        }
         try:
             response = requests.request(
                 method,
@@ -519,10 +525,21 @@ class SmartClockBackend(QObject):
     def _spotify_poll(self):
         if not self.SPOTIFY_CLIENT_ID:
             return
-        self._spotify_poll_count += 1
-        threading.Thread(target=self._spotify_fetch_playback, daemon=True).start()
-        if self._spotify_poll_count % 5 == 0:
-            threading.Thread(target=self._spotify_fetch_devices, daemon=True).start()
+        with self._spotify_poll_lock:
+            if self._spotify_poll_inflight:
+                return
+            self._spotify_poll_inflight = True
+        threading.Thread(target=self._spotify_poll_worker, daemon=True).start()
+
+    def _spotify_poll_worker(self):
+        try:
+            self._spotify_poll_count += 1
+            self._spotify_fetch_playback()
+            if self._spotify_poll_count % 5 == 0:
+                self._spotify_fetch_devices()
+        finally:
+            with self._spotify_poll_lock:
+                self._spotify_poll_inflight = False
 
     def _spotify_fetch_playback(self):
         response = self._spotify_request("GET", "/v1/me/player")
