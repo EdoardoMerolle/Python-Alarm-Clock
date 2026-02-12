@@ -820,7 +820,7 @@ class SmartClockBackend(QObject):
 
 if __name__ == "__main__":
     app = QGuiApplication(sys.argv)
-    app.setOverrideCursor(Qt.BlankCursor) 
+    #app.setOverrideCursor(Qt.BlankCursor) 
     engine = QQmlApplicationEngine()
     backend = SmartClockBackend(app)
     engine.backend_reference = backend 

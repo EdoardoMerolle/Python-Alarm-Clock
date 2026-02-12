@@ -496,48 +496,120 @@ ApplicationWindow {
                 onClicked: backend.toggleLight()
             }
 
+            // --- CLOSE BUTTON (Top Right) ---
+            Button {
+                width: 50; height: 50
+                anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 20
+                background: Rectangle { color: "#33000000"; radius: width / 2; border.color: "#33FFFFFF"; border.width: 1 }
+                contentItem: Text { text: "✕"; color: "white"; font.pixelSize: 22; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 0.6 }
+                onClicked: Qt.quit()
+            }
+        }
+
+        // PAGE 3: SPOTIFY
+        Item {
+            id: spotifyPage
+            Rectangle { anchors.fill: parent; color: "#050706" }
+
+            Image {
+                anchors.fill: parent
+                source: backend.spotifyAlbumArt
+                fillMode: Image.PreserveAspectCrop
+                visible: backend.spotifyAlbumArt !== ""
+                opacity: 0.50
+                scale: backend.spotifyIsPlaying ? 1.03 : 1.0
+                Behavior on scale { NumberAnimation { duration: 2400; easing.type: Easing.InOutQuad } }
+            }
+
             Rectangle {
-                id: spotifyCard
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                anchors.margins: 30
-                width: Math.min(parent.width * 0.40, 420)
-                height: 220
-                radius: 24
+                anchors.fill: parent
                 gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#D0121614" }
-                    GradientStop { position: 1.0; color: "#C90E100F" }
+                    GradientStop { position: 0.0; color: "#88000000" }
+                    GradientStop { position: 0.55; color: "#A00A0D0B" }
+                    GradientStop { position: 1.0; color: "#DE090B0A" }
                 }
-                border.color: "#2E3A34"
-                border.width: 1
-                layer.enabled: true
+            }
+
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: 26
+                spacing: 18
 
                 RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 14
-                    spacing: 12
+                    Layout.fillWidth: true
+                    spacing: 10
+                    Text {
+                        text: "NOW PLAYING"
+                        color: "#AAEFD2"
+                        font.pixelSize: 16
+                        font.bold: true
+                        font.letterSpacing: 1.6
+                    }
+                    Rectangle {
+                        Layout.preferredHeight: 28
+                        Layout.preferredWidth: spotifyStatusText.implicitWidth + 20
+                        radius: 14
+                        color: backend.spotifyConnected ? "#214232" : "#432A2A"
+                        border.color: backend.spotifyConnected ? "#43A478" : "#B35A5A"
+                        border.width: 1
+                        Text {
+                            id: spotifyStatusText
+                            anchors.centerIn: parent
+                            text: backend.spotifyConnected ? "CONNECTED" : "NOT LINKED"
+                            color: backend.spotifyConnected ? "#A3F0CE" : "#F2B0B0"
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+                    }
+                    Item { Layout.fillWidth: true }
+                    Button {
+                        Layout.preferredWidth: 120
+                        Layout.preferredHeight: 44
+                        background: Rectangle {
+                            color: backend.spotifyConnected ? "#2E2E2E" : "#3A2B1D"
+                            radius: 12
+                            border.color: backend.spotifyConnected ? "#555" : "#B98A3D"
+                            border.width: 1
+                        }
+                        contentItem: Text {
+                            text: backend.spotifyConnected ? "Relink" : "Connect"
+                            color: backend.spotifyConnected ? "#F0F0F0" : "#F3D299"
+                            font.pixelSize: 16
+                            font.bold: true
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                        }
+                        onClicked: backend.spotifyStartAuth()
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 26
 
                     Rectangle {
-                        Layout.preferredWidth: 125
-                        Layout.preferredHeight: 125
-                        radius: 16
-                        color: "#1C1C1C"
-                        border.color: "#2E2E2E"
+                        Layout.preferredWidth: Math.min(parent.width * 0.46, 430)
+                        Layout.fillHeight: true
+                        radius: 24
+                        color: "#22000000"
+                        border.color: "#33FFFFFF"
                         border.width: 1
                         clip: true
 
                         Image {
                             anchors.fill: parent
+                            anchors.margins: 12
                             source: backend.spotifyAlbumArt
-                            fillMode: Image.PreserveAspectCrop
+                            fillMode: Image.PreserveAspectFit
                             visible: backend.spotifyAlbumArt !== ""
                         }
                         Text {
                             anchors.centerIn: parent
                             text: "♪"
                             visible: backend.spotifyAlbumArt === ""
-                            color: "#4A5E54"
-                            font.pixelSize: 46
+                            color: "#5A7468"
+                            font.pixelSize: 160
                             font.bold: true
                         }
                     }
@@ -545,126 +617,78 @@ ApplicationWindow {
                     ColumnLayout {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        spacing: 6
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: 8
-                            Text {
-                                text: "Spotify"
-                                color: "#B7F1D3"
-                                font.pixelSize: 11
-                                font.bold: true
-                                font.letterSpacing: 0.8
-                            }
-                            Rectangle {
-                                Layout.preferredHeight: 22
-                                Layout.preferredWidth: statusText.implicitWidth + 16
-                                radius: 11
-                                color: backend.spotifyConnected ? "#243E32" : "#3D2727"
-                                border.color: backend.spotifyConnected ? "#2F7A58" : "#8F4040"
-                                border.width: 1
-                                Text {
-                                    id: statusText
-                                    anchors.centerIn: parent
-                                    text: backend.spotifyConnected ? "Connected" : "Not linked"
-                                    color: backend.spotifyConnected ? "#93E7BF" : "#F0A4A4"
-                                    font.pixelSize: 10
-                                    font.bold: true
-                                }
-                            }
-                            Item { Layout.fillWidth: true }
-                        }
+                        spacing: 14
 
                         Text {
                             text: backend.spotifyTrack
                             color: "white"
-                            font.pixelSize: 22
+                            font.pixelSize: 48
                             font.bold: true
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
                         Text {
                             text: backend.spotifyArtist
-                            color: "#D0D0D0"
-                            font.pixelSize: 14
+                            color: "#D4D4D4"
+                            font.pixelSize: 28
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
                         Text {
                             text: backend.spotifyDeviceName + "  •  " + backend.spotifyStatus
-                            color: "#98A39D"
-                            font.pixelSize: 12
+                            color: "#ACC0B6"
+                            font.pixelSize: 19
                             elide: Text.ElideRight
                             Layout.fillWidth: true
                         }
 
-                        RowLayout {
-                            Layout.topMargin: 8
-                            spacing: 10
+                        Item { Layout.fillHeight: true }
 
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: 14
                             Button {
-                                Layout.preferredWidth: 44
-                                Layout.preferredHeight: 38
-                                background: Rectangle { color: "#202523"; radius: 10; border.color: "#304038"; border.width: 1 }
-                                contentItem: Text { text: "⏮"; color: "#E5EAE7"; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                Layout.preferredWidth: 116
+                                Layout.preferredHeight: 86
+                                background: Rectangle { color: "#2A3230"; radius: 18; border.color: "#43685A"; border.width: 1 }
+                                contentItem: Text { text: "⏮"; color: "#F4F7F5"; font.pixelSize: 42; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: backend.spotifyPreviousTrack()
                             }
                             Button {
-                                Layout.preferredWidth: 62
-                                Layout.preferredHeight: 38
-                                background: Rectangle { color: "#42D89A"; radius: 10 }
-                                contentItem: Text { text: backend.spotifyIsPlaying ? "⏸" : "▶"; color: "#101010"; font.pixelSize: 20; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                Layout.preferredWidth: 150
+                                Layout.preferredHeight: 86
+                                background: Rectangle { color: "#43D79B"; radius: 18 }
+                                contentItem: Text { text: backend.spotifyIsPlaying ? "⏸" : "▶"; color: "#0B1712"; font.pixelSize: 46; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: backend.spotifyTogglePlayPause()
                             }
                             Button {
-                                Layout.preferredWidth: 44
-                                Layout.preferredHeight: 38
-                                background: Rectangle { color: "#202523"; radius: 10; border.color: "#304038"; border.width: 1 }
-                                contentItem: Text { text: "⏭"; color: "#E5EAE7"; font.pixelSize: 18; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                Layout.preferredWidth: 116
+                                Layout.preferredHeight: 86
+                                background: Rectangle { color: "#2A3230"; radius: 18; border.color: "#43685A"; border.width: 1 }
+                                contentItem: Text { text: "⏭"; color: "#F4F7F5"; font.pixelSize: 42; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: backend.spotifyNextTrack()
                             }
-
                             Item { Layout.fillWidth: true }
-
                             Button {
-                                Layout.preferredWidth: 74
-                                Layout.preferredHeight: 34
-                                background: Rectangle { color: "#24362D"; radius: 10; border.color: "#3C8B66"; border.width: 1 }
-                                contentItem: Text { text: "Devices"; color: "#A7EFD0"; font.pixelSize: 12; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                                Layout.preferredWidth: 136
+                                Layout.preferredHeight: 52
+                                background: Rectangle { color: "#234136"; radius: 14; border.color: "#4AA47C"; border.width: 1 }
+                                contentItem: Text { text: "Devices"; color: "#ACEFD1"; font.pixelSize: 20; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                                 onClicked: {
                                     backend.spotifyRefresh()
                                     spotifyDevicesPopup.open()
                                 }
                             }
-                            Button {
-                                Layout.preferredWidth: 74
-                                Layout.preferredHeight: 34
-                                background: Rectangle {
-                                    color: backend.spotifyConnected ? "#2B2B2B" : "#2F2820"
-                                    radius: 10
-                                    border.color: backend.spotifyConnected ? "#474747" : "#92723A"
-                                    border.width: 1
-                                }
-                                contentItem: Text {
-                                    text: backend.spotifyConnected ? "Relink" : "Connect"
-                                    color: backend.spotifyConnected ? "#DADADA" : "#F1CB82"
-                                    font.pixelSize: 12
-                                    font.bold: true
-                                    horizontalAlignment: Text.AlignHCenter
-                                    verticalAlignment: Text.AlignVCenter
-                                }
-                                onClicked: backend.spotifyStartAuth()
-                            }
                         }
 
                         RowLayout {
                             Layout.fillWidth: true
-                            spacing: 10
+                            spacing: 14
                             Text {
-                                text: "Vol"
-                                color: "#B8B8B8"
-                                font.pixelSize: 14
+                                text: "Volume"
+                                color: "#D7EBE1"
+                                font.pixelSize: 20
+                                font.bold: true
                             }
                             Slider {
                                 id: spotifyVolumeSlider
@@ -677,50 +701,42 @@ ApplicationWindow {
                                     x: spotifyVolumeSlider.leftPadding
                                     y: spotifyVolumeSlider.topPadding + spotifyVolumeSlider.availableHeight / 2 - height / 2
                                     width: spotifyVolumeSlider.availableWidth
-                                    height: 5
-                                    radius: 3
-                                    color: "#313836"
+                                    height: 8
+                                    radius: 4
+                                    color: "#33423C"
                                     Rectangle {
                                         width: spotifyVolumeSlider.visualPosition * parent.width
                                         height: parent.height
-                                        radius: 3
-                                        color: "#44D89A"
+                                        radius: 4
+                                        color: "#45D89A"
                                     }
                                 }
                                 handle: Rectangle {
                                     x: spotifyVolumeSlider.leftPadding + spotifyVolumeSlider.visualPosition * (spotifyVolumeSlider.availableWidth - width)
                                     y: spotifyVolumeSlider.topPadding + spotifyVolumeSlider.availableHeight / 2 - height / 2
-                                    implicitWidth: 15
-                                    implicitHeight: 15
-                                    radius: 8
-                                    color: "#D7F9EA"
-                                    border.color: "#379D70"
+                                    implicitWidth: 22
+                                    implicitHeight: 22
+                                    radius: 11
+                                    color: "#E4FCEF"
+                                    border.color: "#3AA173"
                                     border.width: 1
                                 }
                             }
                             Text {
                                 text: Math.round(spotifyVolumeSlider.value) + "%"
-                                color: "#CAE9DB"
-                                font.pixelSize: 14
+                                color: "#CFEBDD"
+                                font.pixelSize: 20
+                                font.bold: true
                                 horizontalAlignment: Text.AlignRight
-                                Layout.preferredWidth: 44
+                                Layout.preferredWidth: 74
                             }
                         }
                     }
                 }
             }
-
-            // --- CLOSE BUTTON (Top Right) ---
-            Button {
-                width: 50; height: 50
-                anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 20
-                background: Rectangle { color: "#33000000"; radius: width / 2; border.color: "#33FFFFFF"; border.width: 1 }
-                contentItem: Text { text: "✕"; color: "white"; font.pixelSize: 22; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter; opacity: 0.6 }
-                onClicked: Qt.quit()
-            }
         }
-        
-        // PAGE 3: CALENDAR GRID
+
+        // PAGE 4: CALENDAR GRID
         Item {
             id: calendarPage
             Rectangle { anchors.fill: parent; color: "#CC000000" }
