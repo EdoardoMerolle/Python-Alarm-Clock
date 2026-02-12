@@ -506,9 +506,120 @@ ApplicationWindow {
             }
         }
 
-        // PAGE 3: SPOTIFY
+        // PAGE 3: CALENDAR GRID
+        Item {
+            id: calendarPage
+            Rectangle { anchors.fill: parent; color: "#CC000000" }
+            property date viewDate: new Date()
+            function daysInMonth(anyDateInMonth) { return new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth() + 1, 0).getDate(); }
+            function firstDayOffset(anyDateInMonth) { var d = new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth(), 1); var day = d.getDay(); return day === 0 ? 6 : day - 1; }
+            function getCellDate(index) { var firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1); var offset = firstDayOffset(firstDay); return new Date(viewDate.getFullYear(), viewDate.getMonth(), 1 + (index - offset)); }
+            function getEventsForDate(dateObj) {
+                var dayEvents = []
+                if (!backend.calendarEvents) return dayEvents 
+                var checkStr = Qt.formatDate(dateObj, "yyyy-MM-dd")
+                for(var i=0; i<backend.calendarEvents.length; i++) {
+                     var evIso = backend.calendarEvents[i].date_iso
+                     if (evIso.substring(0, 10) === checkStr) { dayEvents.push(backend.calendarEvents[i]) }
+                }
+                return dayEvents
+            }
+
+            ColumnLayout {
+                anchors.fill: parent; anchors.margins: 20; spacing: 10
+                RowLayout {
+                    Layout.fillWidth: true; spacing: 20
+                    Item { Layout.fillWidth: true } 
+                    Button {
+                        text: "◀"; background: Rectangle { color: "#333"; radius: 5 }
+                        contentItem: Text { text: "◀"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: calendarPage.viewDate = new Date(calendarPage.viewDate.getFullYear(), calendarPage.viewDate.getMonth() - 1, 1)
+                    }
+                    Text { text: Qt.formatDate(calendarPage.viewDate, "MMMM yyyy"); color: "white"; font.pixelSize: 32; font.bold: true }
+                    Button {
+                        text: "▶"; background: Rectangle { color: "#333"; radius: 5 }
+                        contentItem: Text { text: "▶"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: calendarPage.viewDate = new Date(calendarPage.viewDate.getFullYear(), calendarPage.viewDate.getMonth() + 1, 1)
+                    }
+                    Item { Layout.fillWidth: true } 
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Repeater {
+                        model: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                        Text { text: modelData; color: "#888"; font.bold: true; font.pixelSize: 18; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
+                    }
+                }
+                GridLayout {
+                    columns: 7; Layout.fillWidth: true; Layout.fillHeight: true; columnSpacing: 5; rowSpacing: 5
+                    Repeater {
+                        model: 42 
+                        Rectangle {
+                            property date myDate: calendarPage.getCellDate(index)
+                            property bool isCurrentMonth: myDate.getMonth() === calendarPage.viewDate.getMonth()
+                            property bool isToday: Qt.formatDate(myDate, "yyyy-MM-dd") === Qt.formatDate(new Date(), "yyyy-MM-dd")
+                            property var myEvents: calendarPage.getEventsForDate(myDate)
+                            
+                            Layout.fillWidth: true; Layout.fillHeight: true
+                            color: isToday ? "#334facfe" : (isCurrentMonth ? "#22FFFFFF" : "transparent") 
+                            radius: 5
+                            border.color: isToday ? "#4facfe" : "transparent"; border.width: 1
+                            clip: true 
+
+                            Text {
+                                text: myDate.getDate(); color: isCurrentMonth ? "white" : "#444"
+                                font.pixelSize: 18; font.bold: isToday
+                                anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 5
+                            }
+                            Column {
+                                anchors.top: parent.top; anchors.topMargin: 30 
+                                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 2; spacing: 2
+                                visible: isCurrentMonth
+                                Repeater {
+                                    model: myEvents.length > 3 ? myEvents.slice(0, 3) : myEvents
+                                    Rectangle {
+                                        height: 12; width: parent.width; color: "#4facfe"; radius: 6
+                                        RowLayout {
+                                            anchors.fill: parent; anchors.leftMargin: 5; anchors.rightMargin: 5; spacing: 4
+                                            Text { text: Qt.formatTime(new Date(modelData.date_iso), "hh:mm"); color: "#DAEFFF"; font.pixelSize: 10; font.weight: Font.Normal }
+                                            Text { text: modelData.title; color: "white"; font.pixelSize: 10; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
+                                        }
+                                    }
+                                }
+                                Text { visible: myEvents.length > 3; text: "+" + (myEvents.length - 3) + " more"; color: "#888"; font.pixelSize: 10; anchors.horizontalCenter: parent.horizontalCenter }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    if (myEvents.length > 0) {
+                                        dayDetailsPopup.selectedDate = myDate
+                                        dayDetailsPopup.eventsForDay = myEvents
+                                        dayDetailsPopup.open()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // PAGE 4: SPOTIFY
         Item {
             id: spotifyPage
+            property bool controlsVisible: false
+            function revealControls() {
+                controlsVisible = true
+                controlsHideTimer.restart()
+            }
+
+            Timer {
+                id: controlsHideTimer
+                interval: 5000
+                repeat: false
+                onTriggered: spotifyPage.controlsVisible = false
+            }
+
             Rectangle { anchors.fill: parent; color: "#10141B" }
 
             Image {
@@ -624,67 +735,120 @@ ApplicationWindow {
                 }
             }
 
-            RowLayout {
+            Rectangle {
+                id: albumThumb
+                width: 88
+                height: 88
+                radius: 4
+                color: "#2B3340"
                 anchors.left: parent.left
-                anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                anchors.leftMargin: 50
-                anchors.rightMargin: 50
-                anchors.bottomMargin: 72
-                spacing: 22
-
-                Rectangle {
-                    Layout.preferredWidth: 88
-                    Layout.preferredHeight: 88
-                    radius: 4
-                    color: "#2B3340"
-                    clip: true
-                    Image {
-                        anchors.fill: parent
-                        source: backend.spotifyAlbumArt
-                        fillMode: Image.PreserveAspectCrop
-                        visible: backend.spotifyAlbumArt !== ""
-                    }
-                    Text {
-                        anchors.centerIn: parent
-                        text: "♪"
-                        color: "#6A7A8B"
-                        visible: backend.spotifyAlbumArt === ""
-                        font.pixelSize: 46
-                        font.bold: true
-                    }
+                anchors.leftMargin: spotifyPage.controlsVisible ? 28 : 50
+                anchors.bottomMargin: spotifyPage.controlsVisible ? 200 : 72
+                clip: true
+                z: 20
+                Behavior on anchors.leftMargin { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on anchors.bottomMargin { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Image {
+                    anchors.fill: parent
+                    source: backend.spotifyAlbumArt
+                    fillMode: Image.PreserveAspectCrop
+                    visible: backend.spotifyAlbumArt !== ""
                 }
+                Text {
+                    anchors.centerIn: parent
+                    text: "♪"
+                    color: "#6A7A8B"
+                    visible: backend.spotifyAlbumArt === ""
+                    font.pixelSize: 46
+                    font.bold: true
+                }
+            }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 3
-                    Text {
-                        text: backend.spotifyTrack
-                        color: "white"
-                        font.pixelSize: 54
-                        font.bold: true
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
+            Column {
+                anchors.left: albumThumb.right
+                anchors.right: parent.right
+                anchors.rightMargin: 50
+                anchors.bottom: parent.bottom
+                anchors.leftMargin: 22
+                anchors.bottomMargin: spotifyPage.controlsVisible ? 216 : 86
+                spacing: 3
+                z: 20
+                Behavior on anchors.bottomMargin { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Text {
+                    text: backend.spotifyTrack
+                    color: "white"
+                    font.pixelSize: 54
+                    font.bold: true
+                    elide: Text.ElideRight
+                    width: parent.width
+                }
+                Text {
+                    text: backend.spotifyArtist
+                    color: "#D4D8DE"
+                    font.pixelSize: 20
+                    font.bold: true
+                    elide: Text.ElideRight
+                    width: parent.width
+                }
+            }
+
+            Rectangle {
+                id: quickControls
+                width: 290
+                height: 86
+                radius: 18
+                color: "#A3151B24"
+                border.color: "#4EA58A"
+                border.width: 1
+                x: (parent.width - width) / 2
+                y: spotifyPage.controlsVisible ? (parent.height * 0.47) : (parent.height + 20)
+                opacity: spotifyPage.controlsVisible ? 1.0 : 0.0
+                z: 30
+                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: 180 } }
+
+                RowLayout {
+                    anchors.centerIn: parent
+                    spacing: 14
+                    Button {
+                        Layout.preferredWidth: 72
+                        Layout.preferredHeight: 58
+                        background: Rectangle { color: "#2A3340"; radius: 12; border.color: "#54708C"; border.width: 1 }
+                        contentItem: Text { text: "⏮"; color: "#F4F7FB"; font.pixelSize: 30; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: { spotifyPage.revealControls(); backend.spotifyPreviousTrack() }
                     }
-                    Text {
-                        text: backend.spotifyArtist
-                        color: "#D4D8DE"
-                        font.pixelSize: 20
-                        font.bold: true
-                        elide: Text.ElideRight
-                        Layout.fillWidth: true
+                    Button {
+                        Layout.preferredWidth: 96
+                        Layout.preferredHeight: 58
+                        background: Rectangle { color: "#46D89C"; radius: 12 }
+                        contentItem: Text { text: backend.spotifyIsPlaying ? "⏸" : "▶"; color: "#0E1A15"; font.pixelSize: 32; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: { spotifyPage.revealControls(); backend.spotifyTogglePlayPause() }
+                    }
+                    Button {
+                        Layout.preferredWidth: 72
+                        Layout.preferredHeight: 58
+                        background: Rectangle { color: "#2A3340"; radius: 12; border.color: "#54708C"; border.width: 1 }
+                        contentItem: Text { text: "⏭"; color: "#F4F7FB"; font.pixelSize: 30; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        onClicked: { spotifyPage.revealControls(); backend.spotifyNextTrack() }
                     }
                 }
             }
 
             Rectangle {
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.bottom: parent.bottom
-                height: 64
-                color: "#98090B10"
+                id: optionsPanel
+                width: Math.min(parent.width * 0.82, 860)
+                height: 82
+                radius: 14
+                color: "#B00D121A"
                 border.color: "#3AFFFFFF"
                 border.width: 1
+                x: (parent.width - width) / 2
+                y: spotifyPage.controlsVisible ? (quickControls.y + quickControls.height + 14) : (parent.height + 20)
+                opacity: spotifyPage.controlsVisible ? 1.0 : 0.0
+                z: 29
+                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on opacity { NumberAnimation { duration: 180 } }
 
                 RowLayout {
                     anchors.fill: parent
@@ -693,40 +857,18 @@ ApplicationWindow {
                     spacing: 12
 
                     Button {
-                        Layout.preferredWidth: 62
-                        Layout.preferredHeight: 44
-                        background: Rectangle { color: "#2A3340"; radius: 8; border.color: "#54708C"; border.width: 1 }
-                        contentItem: Text { text: "⏮"; color: "#F4F7FB"; font.pixelSize: 28; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: backend.spotifyPreviousTrack()
-                    }
-                    Button {
-                        Layout.preferredWidth: 78
-                        Layout.preferredHeight: 44
-                        background: Rectangle { color: "#46D89C"; radius: 8 }
-                        contentItem: Text { text: backend.spotifyIsPlaying ? "⏸" : "▶"; color: "#0E1A15"; font.pixelSize: 30; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: backend.spotifyTogglePlayPause()
-                    }
-                    Button {
-                        Layout.preferredWidth: 62
-                        Layout.preferredHeight: 44
-                        background: Rectangle { color: "#2A3340"; radius: 8; border.color: "#54708C"; border.width: 1 }
-                        contentItem: Text { text: "⏭"; color: "#F4F7FB"; font.pixelSize: 28; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: backend.spotifyNextTrack()
-                    }
-
-                    Button {
-                        Layout.preferredWidth: 94
-                        Layout.preferredHeight: 42
-                        background: Rectangle { color: "#243F35"; radius: 8; border.color: "#4FAF83"; border.width: 1 }
+                        Layout.preferredWidth: 110
+                        Layout.preferredHeight: 46
+                        background: Rectangle { color: "#243F35"; radius: 10; border.color: "#4FAF83"; border.width: 1 }
                         contentItem: Text { text: "Devices"; color: "#AEEED0"; font.pixelSize: 15; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: { backend.spotifyRefresh(); spotifyDevicesPopup.open() }
+                        onClicked: { spotifyPage.revealControls(); backend.spotifyRefresh(); spotifyDevicesPopup.open() }
                     }
                     Button {
-                        Layout.preferredWidth: 92
-                        Layout.preferredHeight: 42
+                        Layout.preferredWidth: 106
+                        Layout.preferredHeight: 46
                         background: Rectangle {
                             color: backend.spotifyConnected ? "#2F343A" : "#3E2C20"
-                            radius: 8
+                            radius: 10
                             border.color: backend.spotifyConnected ? "#6A7179" : "#B0864D"
                             border.width: 1
                         }
@@ -738,7 +880,7 @@ ApplicationWindow {
                             horizontalAlignment: Text.AlignHCenter
                             verticalAlignment: Text.AlignVCenter
                         }
-                        onClicked: backend.spotifyStartAuth()
+                        onClicked: { spotifyPage.revealControls(); backend.spotifyStartAuth() }
                     }
 
                     Item { Layout.fillWidth: true }
@@ -751,11 +893,14 @@ ApplicationWindow {
                     }
                     Slider {
                         id: spotifyVolumeSlider
-                        Layout.preferredWidth: Math.min(parent.width * 0.22, 240)
+                        Layout.preferredWidth: Math.min(parent.width * 0.30, 300)
                         from: 0
                         to: 100
                         value: backend.spotifyVolume
-                        onMoved: backend.spotifySetVolume(Math.round(value))
+                        onMoved: {
+                            spotifyPage.revealControls()
+                            backend.spotifySetVolume(Math.round(value))
+                        }
                         background: Rectangle {
                             x: spotifyVolumeSlider.leftPadding
                             y: spotifyVolumeSlider.topPadding + spotifyVolumeSlider.availableHeight / 2 - height / 2
@@ -790,102 +935,13 @@ ApplicationWindow {
                     }
                 }
             }
-        }
 
-        // PAGE 4: CALENDAR GRID
-        Item {
-            id: calendarPage
-            Rectangle { anchors.fill: parent; color: "#CC000000" }
-            property date viewDate: new Date()
-            function daysInMonth(anyDateInMonth) { return new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth() + 1, 0).getDate(); }
-            function firstDayOffset(anyDateInMonth) { var d = new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth(), 1); var day = d.getDay(); return day === 0 ? 6 : day - 1; }
-            function getCellDate(index) { var firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1); var offset = firstDayOffset(firstDay); return new Date(viewDate.getFullYear(), viewDate.getMonth(), 1 + (index - offset)); }
-            function getEventsForDate(dateObj) {
-                var dayEvents = []
-                if (!backend.calendarEvents) return dayEvents 
-                var checkStr = Qt.formatDate(dateObj, "yyyy-MM-dd")
-                for(var i=0; i<backend.calendarEvents.length; i++) {
-                     var evIso = backend.calendarEvents[i].date_iso
-                     if (evIso.substring(0, 10) === checkStr) { dayEvents.push(backend.calendarEvents[i]) }
-                }
-                return dayEvents
-            }
-
-            ColumnLayout {
-                anchors.fill: parent; anchors.margins: 20; spacing: 10
-                RowLayout {
-                    Layout.fillWidth: true; spacing: 20
-                    Item { Layout.fillWidth: true } 
-                    Button {
-                        text: "◀"; background: Rectangle { color: "#333"; radius: 5 }
-                        contentItem: Text { text: "◀"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: calendarPage.viewDate = new Date(calendarPage.viewDate.getFullYear(), calendarPage.viewDate.getMonth() - 1, 1)
-                    }
-                    Text { text: Qt.formatDate(calendarPage.viewDate, "MMMM yyyy"); color: "white"; font.pixelSize: 32; font.bold: true }
-                    Button {
-                        text: "▶"; background: Rectangle { color: "#333"; radius: 5 }
-                        contentItem: Text { text: "▶"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: calendarPage.viewDate = new Date(calendarPage.viewDate.getFullYear(), calendarPage.viewDate.getMonth() + 1, 1)
-                    }
-                    Item { Layout.fillWidth: true } 
-                }
-                RowLayout {
-                    Layout.fillWidth: true
-                    Repeater {
-                        model: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-                        Text { text: modelData; color: "#888"; font.bold: true; font.pixelSize: 18; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter }
-                    }
-                }
-                GridLayout {
-                    columns: 7; Layout.fillWidth: true; Layout.fillHeight: true; columnSpacing: 5; rowSpacing: 5
-                    Repeater {
-                        model: 42 
-                        Rectangle {
-                            property date myDate: calendarPage.getCellDate(index)
-                            property bool isCurrentMonth: myDate.getMonth() === calendarPage.viewDate.getMonth()
-                            property bool isToday: Qt.formatDate(myDate, "yyyy-MM-dd") === Qt.formatDate(new Date(), "yyyy-MM-dd")
-                            property var myEvents: calendarPage.getEventsForDate(myDate)
-                            
-                            Layout.fillWidth: true; Layout.fillHeight: true
-                            color: isToday ? "#334facfe" : (isCurrentMonth ? "#22FFFFFF" : "transparent") 
-                            radius: 5
-                            border.color: isToday ? "#4facfe" : "transparent"; border.width: 1
-                            clip: true 
-
-                            Text {
-                                text: myDate.getDate(); color: isCurrentMonth ? "white" : "#444"
-                                font.pixelSize: 18; font.bold: isToday
-                                anchors.left: parent.left; anchors.top: parent.top; anchors.margins: 5
-                            }
-                            Column {
-                                anchors.top: parent.top; anchors.topMargin: 30 
-                                anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 2; spacing: 2
-                                visible: isCurrentMonth
-                                Repeater {
-                                    model: myEvents.length > 3 ? myEvents.slice(0, 3) : myEvents
-                                    Rectangle {
-                                        height: 12; width: parent.width; color: "#4facfe"; radius: 6
-                                        RowLayout {
-                                            anchors.fill: parent; anchors.leftMargin: 5; anchors.rightMargin: 5; spacing: 4
-                                            Text { text: Qt.formatTime(new Date(modelData.date_iso), "hh:mm"); color: "#DAEFFF"; font.pixelSize: 10; font.weight: Font.Normal }
-                                            Text { text: modelData.title; color: "white"; font.pixelSize: 10; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
-                                        }
-                                    }
-                                }
-                                Text { visible: myEvents.length > 3; text: "+" + (myEvents.length - 3) + " more"; color: "#888"; font.pixelSize: 10; anchors.horizontalCenter: parent.horizontalCenter }
-                            }
-                            MouseArea {
-                                anchors.fill: parent
-                                onClicked: {
-                                    if (myEvents.length > 0) {
-                                        dayDetailsPopup.selectedDate = myDate
-                                        dayDetailsPopup.eventsForDay = myEvents
-                                        dayDetailsPopup.open()
-                                    }
-                                }
-                            }
-                        }
-                    }
+            MouseArea {
+                anchors.fill: parent
+                z: 10
+                onPressed: {
+                    spotifyPage.revealControls()
+                    mouse.accepted = false
                 }
             }
         }
