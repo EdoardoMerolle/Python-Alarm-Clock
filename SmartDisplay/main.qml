@@ -312,7 +312,16 @@ ApplicationWindow {
                 id: alarmListView
                 anchors.fill: parent; anchors.margins: 30; clip: true; spacing: 20
                 model: backend.alarmList
+                property real preservedContentY: 0
+                property bool restoreAfterModelUpdate: false
                 header: Text { text: "Your Alarms"; color: "white"; font.pixelSize: 42; font.bold: true; bottomPadding: 20 }
+                onModelChanged: {
+                    if (restoreAfterModelUpdate) {
+                        var maxY = Math.max(0, contentHeight - height)
+                        contentY = Math.max(0, Math.min(preservedContentY, maxY))
+                        restoreAfterModelUpdate = false
+                    }
+                }
                 delegate: Rectangle {
                     width: alarmListView.width; height: 120
                     color: "#CC222222"; radius: 20
@@ -340,7 +349,11 @@ ApplicationWindow {
                             id: alarmSwitch
                             Layout.preferredWidth: 80; Layout.preferredHeight: 40
                             checked: modelData.active === 1
-                            onToggled: backend.toggleAlarm(modelData.id, checked)
+                            onToggled: {
+                                alarmListView.preservedContentY = alarmListView.contentY
+                                alarmListView.restoreAfterModelUpdate = true
+                                backend.toggleAlarm(modelData.id, checked)
+                            }
                             indicator: Item {
                                 implicitWidth: 80; implicitHeight: 40
                                 Rectangle { anchors.fill: parent; radius: 20; color: alarmSwitch.checked ? "#4facfe" : "#333"; border.color: alarmSwitch.checked ? "#4facfe" : "#555"; border.width: 1; Behavior on color { ColorAnimation { duration: 200 } } }
@@ -370,7 +383,11 @@ ApplicationWindow {
                             Layout.preferredWidth: 50; Layout.preferredHeight: 50
                             background: Rectangle { color: "transparent" }
                             contentItem: Text { text: "✕"; color: "white"; font.pixelSize: 32; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                            onClicked: backend.deleteAlarm(modelData.id)
+                            onClicked: {
+                                alarmListView.preservedContentY = alarmListView.contentY
+                                alarmListView.restoreAfterModelUpdate = true
+                                backend.deleteAlarm(modelData.id)
+                            }
                         }
                     }
                 }
