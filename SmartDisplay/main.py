@@ -75,7 +75,7 @@ class SmartClockBackend(QObject):
         self._spotify_devices = []
         self._spotify_selected_device_id = ""
         self._spotify_status = "Not Connected"
-        self._spotify_poll_second = -1
+        self._spotify_poll_count = 0
         self._spotify_lock = threading.Lock()
         
         # --- ASYNC SETUP ---
@@ -108,6 +108,12 @@ class SmartClockBackend(QObject):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
         self._timer.start(1000)
+
+        # Spotify polling is independent of clock tick so metadata stays fresh.
+        self._spotify_timer = QTimer(self)
+        self._spotify_timer.setInterval(2000)
+        self._spotify_timer.timeout.connect(self._spotify_poll)
+        self._spotify_timer.start()
 
         # --- SCREEN BLANKING TIMER ---
         self._inactivity_timer = QTimer(self)
@@ -513,7 +519,10 @@ class SmartClockBackend(QObject):
     def _spotify_poll(self):
         if not self.SPOTIFY_CLIENT_ID:
             return
+        self._spotify_poll_count += 1
         threading.Thread(target=self._spotify_fetch_playback, daemon=True).start()
+        if self._spotify_poll_count % 5 == 0:
+            threading.Thread(target=self._spotify_fetch_devices, daemon=True).start()
 
     def _spotify_fetch_playback(self):
         response = self._spotify_request("GET", "/v1/me/player")
@@ -746,9 +755,6 @@ class SmartClockBackend(QObject):
                 self._set_screen_power(True)
 
         if self.TAPO_IP and now.second % 2 == 0: self._check_light_status()
-        if self.SPOTIFY_CLIENT_ID and now.second % 5 == 0 and self._spotify_poll_second != now.second:
-            self._spotify_poll_second = now.second
-            self._spotify_poll()
 
     def _check_alarms(self, now_dt):
         current_time_str = now_dt.strftime("%H:%M")

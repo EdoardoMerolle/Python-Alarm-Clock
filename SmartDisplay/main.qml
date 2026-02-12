@@ -815,21 +815,21 @@ ApplicationWindow {
                         Layout.preferredWidth: 72
                         Layout.preferredHeight: 58
                         background: Rectangle { color: "#2A3340"; radius: 12; border.color: "#54708C"; border.width: 1 }
-                        contentItem: Text { text: "⏮"; color: "#F4F7FB"; font.pixelSize: 30; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        contentItem: Text { text: "PREV"; color: "#F4F7FB"; font.pixelSize: 18; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                         onClicked: { spotifyPage.revealControls(); backend.spotifyPreviousTrack() }
                     }
                     Button {
                         Layout.preferredWidth: 96
                         Layout.preferredHeight: 58
                         background: Rectangle { color: "#46D89C"; radius: 12 }
-                        contentItem: Text { text: backend.spotifyIsPlaying ? "⏸" : "▶"; color: "#0E1A15"; font.pixelSize: 32; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        contentItem: Text { text: backend.spotifyIsPlaying ? "PAUSE" : "PLAY"; color: "#0E1A15"; font.pixelSize: 18; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                         onClicked: { spotifyPage.revealControls(); backend.spotifyTogglePlayPause() }
                     }
                     Button {
                         Layout.preferredWidth: 72
                         Layout.preferredHeight: 58
                         background: Rectangle { color: "#2A3340"; radius: 12; border.color: "#54708C"; border.width: 1 }
-                        contentItem: Text { text: "⏭"; color: "#F4F7FB"; font.pixelSize: 30; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                        contentItem: Text { text: "NEXT"; color: "#F4F7FB"; font.pixelSize: 18; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                         onClicked: { spotifyPage.revealControls(); backend.spotifyNextTrack() }
                     }
                 }
