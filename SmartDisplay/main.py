@@ -6,6 +6,12 @@ import requests
 import json
 import asyncio
 import subprocess 
+import hashlib
+import base64
+import secrets as pysecrets
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlencode, urlparse, parse_qs
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
@@ -28,6 +34,7 @@ class SmartClockBackend(QObject):
     weatherChanged = Signal()
     lightStateChanged = Signal()
     snoozeChanged = Signal()
+    spotifyChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -45,6 +52,9 @@ class SmartClockBackend(QObject):
         self.TAPO_IP = self.secrets.get("tapo_ip", "")
         self.TAPO_EMAIL = self.secrets.get("tapo_email", "")
         self.TAPO_PASSWORD = self.secrets.get("tapo_password", "")
+        self.SPOTIFY_CLIENT_ID = self.secrets.get("spotify_client_id", "").strip()
+        self.SPOTIFY_REDIRECT_URI = self.secrets.get("spotify_redirect_uri", "http://127.0.0.1:8765/callback").strip()
+        self.SPOTIFY_SCOPES = "user-read-playback-state user-read-currently-playing user-modify-playback-state"
         
         self._weather_temp = "--"
         self._weather_icon = "" 
@@ -53,6 +63,20 @@ class SmartClockBackend(QObject):
         self._active_alarm_id = None
         self._snoozed_alarm_id = None
         self._snooze_until = None
+        self._spotify_access_token = None
+        self._spotify_refresh_token = self.secrets.get("spotify_refresh_token", "").strip() or None
+        self._spotify_expires_at = 0
+        self._spotify_track = "Nothing Playing"
+        self._spotify_artist = "Spotify"
+        self._spotify_album_art = ""
+        self._spotify_is_playing = False
+        self._spotify_device_name = "No Device"
+        self._spotify_volume = 0
+        self._spotify_devices = []
+        self._spotify_selected_device_id = ""
+        self._spotify_status = "Not Connected"
+        self._spotify_poll_second = -1
+        self._spotify_lock = threading.Lock()
         
         # --- ASYNC SETUP ---
         self._bulb_device = None
@@ -69,6 +93,7 @@ class SmartClockBackend(QObject):
         self.cal_links_file = base_path / "assets" / "calendar_links.txt"
         self.weather_asset_path = base_path / "assets" / "weather"
         self.weather_asset_path.mkdir(parents=True, exist_ok=True)
+        self.spotify_token_file = base_path / "assets" / "spotify_token.json"
 
         # Audio Setup
         self.player = QMediaPlayer()
@@ -99,6 +124,13 @@ class SmartClockBackend(QObject):
             self._fetch_weather()
             
         self._refresh_calendar()
+        self._load_spotify_token()
+        if self._spotify_refresh_token:
+            self._spotify_status = "Connecting..."
+            self.spotifyChanged.emit()
+            self._spotify_refresh_access_token()
+            self._spotify_fetch_devices()
+            self._spotify_fetch_playback()
         self._tick()
 
     def _load_secrets(self):
@@ -275,6 +307,351 @@ class SmartClockBackend(QObject):
     @Property(str, notify=weatherChanged)
     def weatherDesc(self): return self._weather_desc
 
+    # --- SPOTIFY ---
+    def _load_spotify_token(self):
+        if not self.spotify_token_file.exists():
+            return
+        try:
+            with open(self.spotify_token_file, "r") as f:
+                data = json.load(f)
+            self._spotify_access_token = data.get("access_token")
+            self._spotify_refresh_token = data.get("refresh_token") or self._spotify_refresh_token
+            self._spotify_expires_at = int(data.get("expires_at", 0))
+            if self._spotify_access_token:
+                self._spotify_status = "Connected"
+        except:
+            pass
+
+    def _save_spotify_token(self):
+        try:
+            self.spotify_token_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self.spotify_token_file, "w") as f:
+                json.dump({
+                    "access_token": self._spotify_access_token,
+                    "refresh_token": self._spotify_refresh_token,
+                    "expires_at": self._spotify_expires_at
+                }, f)
+            os.chmod(self.spotify_token_file, 0o600)
+        except:
+            pass
+
+    def _spotify_set_status(self, status):
+        if self._spotify_status != status:
+            self._spotify_status = status
+            self.spotifyChanged.emit()
+
+    def _spotify_set_disconnected(self, status="Not Connected"):
+        self._spotify_track = "Nothing Playing"
+        self._spotify_artist = "Spotify"
+        self._spotify_album_art = ""
+        self._spotify_is_playing = False
+        self._spotify_device_name = "No Device"
+        self._spotify_volume = 0
+        self._spotify_devices = []
+        self._spotify_selected_device_id = ""
+        self._spotify_set_status(status)
+        self.spotifyChanged.emit()
+
+    def _spotify_auth_url(self, code_challenge, state):
+        params = {
+            "client_id": self.SPOTIFY_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": self.SPOTIFY_REDIRECT_URI,
+            "code_challenge_method": "S256",
+            "code_challenge": code_challenge,
+            "scope": self.SPOTIFY_SCOPES,
+            "state": state
+        }
+        return f"https://accounts.spotify.com/authorize?{urlencode(params)}"
+
+    def _spotify_ensure_access_token(self):
+        if self._spotify_access_token and time.time() < (self._spotify_expires_at - 60):
+            return True
+        return self._spotify_refresh_access_token()
+
+    def _spotify_refresh_access_token(self):
+        with self._spotify_lock:
+            if not self.SPOTIFY_CLIENT_ID:
+                self._spotify_set_disconnected("Missing spotify_client_id")
+                return False
+            if not self._spotify_refresh_token:
+                self._spotify_set_disconnected("Spotify auth required")
+                return False
+            try:
+                response = requests.post(
+                    "https://accounts.spotify.com/api/token",
+                    data={
+                        "grant_type": "refresh_token",
+                        "refresh_token": self._spotify_refresh_token,
+                        "client_id": self.SPOTIFY_CLIENT_ID
+                    },
+                    timeout=10
+                )
+                if response.status_code != 200:
+                    self._spotify_set_disconnected("Spotify auth required")
+                    return False
+                payload = response.json()
+                self._spotify_access_token = payload.get("access_token")
+                self._spotify_expires_at = int(time.time()) + int(payload.get("expires_in", 3600))
+                if payload.get("refresh_token"):
+                    self._spotify_refresh_token = payload.get("refresh_token")
+                self._save_spotify_token()
+                self._spotify_set_status("Connected")
+                return True
+            except:
+                self._spotify_set_disconnected("Spotify unavailable")
+                return False
+
+    def _spotify_request(self, method, endpoint, params=None, json_body=None, data=None, retry=True):
+        if not self._spotify_ensure_access_token():
+            return None
+        headers = {"Authorization": f"Bearer {self._spotify_access_token}"}
+        try:
+            response = requests.request(
+                method,
+                f"https://api.spotify.com{endpoint}",
+                headers=headers,
+                params=params,
+                json=json_body,
+                data=data,
+                timeout=10
+            )
+            if response.status_code == 401 and retry and self._spotify_refresh_access_token():
+                return self._spotify_request(method, endpoint, params=params, json_body=json_body, data=data, retry=False)
+            return response
+        except:
+            self._spotify_set_status("Spotify unavailable")
+            return None
+
+    def _spotify_worker_start_auth(self):
+        if not self.SPOTIFY_CLIENT_ID:
+            self._spotify_set_disconnected("Add spotify_client_id to secrets")
+            return
+        parsed = urlparse(self.SPOTIFY_REDIRECT_URI)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port
+        path = parsed.path or "/callback"
+        if not port:
+            self._spotify_set_disconnected("Invalid spotify_redirect_uri")
+            return
+
+        code_verifier = base64.urlsafe_b64encode(os.urandom(64)).decode("utf-8").rstrip("=")
+        digest = hashlib.sha256(code_verifier.encode("utf-8")).digest()
+        code_challenge = base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
+        state = pysecrets.token_urlsafe(16)
+        holder = {"code": None, "state": None, "error": None}
+
+        class CallbackHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                req = urlparse(self.path)
+                if req.path != path:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                qs = parse_qs(req.query)
+                holder["code"] = qs.get("code", [None])[0]
+                holder["state"] = qs.get("state", [None])[0]
+                holder["error"] = qs.get("error", [None])[0]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<html><body><h3>Spotify connected. You can close this tab.</h3></body></html>")
+
+            def log_message(self, _format, *args):
+                return
+
+        self._spotify_set_status("Open Spotify login in browser")
+        try:
+            server = HTTPServer((host, port), CallbackHandler)
+            server.timeout = 1
+        except:
+            self._spotify_set_disconnected("Cannot open local auth callback")
+            return
+
+        auth_url = self._spotify_auth_url(code_challenge, state)
+        subprocess.run(["xdg-open", auth_url], check=False)
+
+        started = time.time()
+        while time.time() - started < 180 and not holder["code"] and not holder["error"]:
+            server.handle_request()
+        server.server_close()
+
+        if holder["error"]:
+            self._spotify_set_disconnected("Spotify login denied")
+            return
+        if not holder["code"] or holder["state"] != state:
+            self._spotify_set_disconnected("Spotify auth timed out")
+            return
+
+        try:
+            token_response = requests.post(
+                "https://accounts.spotify.com/api/token",
+                data={
+                    "grant_type": "authorization_code",
+                    "code": holder["code"],
+                    "redirect_uri": self.SPOTIFY_REDIRECT_URI,
+                    "client_id": self.SPOTIFY_CLIENT_ID,
+                    "code_verifier": code_verifier
+                },
+                timeout=10
+            )
+            if token_response.status_code != 200:
+                self._spotify_set_disconnected("Spotify token exchange failed")
+                return
+            payload = token_response.json()
+            self._spotify_access_token = payload.get("access_token")
+            self._spotify_refresh_token = payload.get("refresh_token")
+            self._spotify_expires_at = int(time.time()) + int(payload.get("expires_in", 3600))
+            self._save_spotify_token()
+            self._spotify_set_status("Connected")
+            self.spotifyChanged.emit()
+            self._spotify_fetch_devices()
+            self._spotify_fetch_playback()
+        except:
+            self._spotify_set_disconnected("Spotify token exchange failed")
+
+    def _spotify_poll(self):
+        if not self.SPOTIFY_CLIENT_ID:
+            return
+        threading.Thread(target=self._spotify_fetch_playback, daemon=True).start()
+
+    def _spotify_fetch_playback(self):
+        response = self._spotify_request("GET", "/v1/me/player")
+        if response is None:
+            return
+        if response.status_code == 204:
+            self._spotify_track = "Nothing Playing"
+            self._spotify_artist = "Spotify"
+            self._spotify_album_art = ""
+            self._spotify_is_playing = False
+            self._spotify_device_name = "No Active Device"
+            self._spotify_set_status("Connected")
+            self.spotifyChanged.emit()
+            return
+        if response.status_code != 200:
+            self._spotify_set_status("Spotify playback unavailable")
+            return
+
+        payload = response.json()
+        item = payload.get("item") or {}
+        artists = item.get("artists") or []
+        album = item.get("album") or {}
+        images = album.get("images") or []
+        device = payload.get("device") or {}
+        self._spotify_track = item.get("name", "Nothing Playing")
+        self._spotify_artist = ", ".join([a.get("name", "") for a in artists if a.get("name")]) or "Spotify"
+        self._spotify_album_art = images[0].get("url", "") if images else ""
+        self._spotify_is_playing = bool(payload.get("is_playing"))
+        self._spotify_device_name = device.get("name", "No Active Device")
+        self._spotify_volume = int(device.get("volume_percent", self._spotify_volume or 0))
+        self._spotify_set_status("Connected")
+        self.spotifyChanged.emit()
+
+    def _spotify_fetch_devices(self):
+        response = self._spotify_request("GET", "/v1/me/player/devices")
+        if response is None or response.status_code != 200:
+            self._spotify_set_status("Cannot load Spotify devices")
+            return
+        payload = response.json()
+        devices = []
+        for dev in payload.get("devices", []):
+            devices.append({
+                "id": dev.get("id", ""),
+                "name": dev.get("name", "Unknown"),
+                "type": dev.get("type", ""),
+                "is_active": bool(dev.get("is_active", False)),
+                "volume_percent": int(dev.get("volume_percent", 0))
+            })
+            if dev.get("is_active"):
+                self._spotify_selected_device_id = dev.get("id", "")
+        self._spotify_devices = devices
+        self._spotify_set_status("Connected")
+        self.spotifyChanged.emit()
+
+    def _spotify_control(self, method, endpoint, params=None, json_body=None):
+        threading.Thread(
+            target=self._spotify_control_worker,
+            args=(method, endpoint, params, json_body),
+            daemon=True
+        ).start()
+
+    def _spotify_control_worker(self, method, endpoint, params, json_body):
+        response = self._spotify_request(method, endpoint, params=params, json_body=json_body)
+        if response is not None and response.status_code in [200, 202, 204]:
+            self._spotify_set_status("Connected")
+        elif response is not None and response.status_code == 404:
+            self._spotify_set_status("No active Spotify device")
+        elif response is not None and response.status_code == 403:
+            self._spotify_set_status("Spotify Premium required")
+        elif response is not None:
+            self._spotify_set_status("Spotify action failed")
+        self._spotify_fetch_playback()
+        self._spotify_fetch_devices()
+
+    @Property(bool, notify=spotifyChanged)
+    def spotifyConnected(self):
+        return self._spotify_status == "Connected" and bool(self._spotify_refresh_token or self._spotify_access_token)
+
+    @Property(str, notify=spotifyChanged)
+    def spotifyTrack(self): return self._spotify_track
+    @Property(str, notify=spotifyChanged)
+    def spotifyArtist(self): return self._spotify_artist
+    @Property(str, notify=spotifyChanged)
+    def spotifyAlbumArt(self): return self._spotify_album_art
+    @Property(bool, notify=spotifyChanged)
+    def spotifyIsPlaying(self): return self._spotify_is_playing
+    @Property(str, notify=spotifyChanged)
+    def spotifyDeviceName(self): return self._spotify_device_name
+    @Property(int, notify=spotifyChanged)
+    def spotifyVolume(self): return self._spotify_volume
+    @Property(list, notify=spotifyChanged)
+    def spotifyDevices(self): return self._spotify_devices
+    @Property(str, notify=spotifyChanged)
+    def spotifyStatus(self): return self._spotify_status
+
+    @Slot()
+    def spotifyStartAuth(self):
+        threading.Thread(target=self._spotify_worker_start_auth, daemon=True).start()
+
+    @Slot()
+    def spotifyRefresh(self):
+        threading.Thread(target=self._spotify_fetch_playback, daemon=True).start()
+        threading.Thread(target=self._spotify_fetch_devices, daemon=True).start()
+
+    @Slot()
+    def spotifyTogglePlayPause(self):
+        endpoint = "/v1/me/player/pause" if self._spotify_is_playing else "/v1/me/player/play"
+        params = {"device_id": self._spotify_selected_device_id} if self._spotify_selected_device_id else None
+        self._spotify_control("PUT", endpoint, params=params)
+
+    @Slot()
+    def spotifyNextTrack(self):
+        params = {"device_id": self._spotify_selected_device_id} if self._spotify_selected_device_id else None
+        self._spotify_control("POST", "/v1/me/player/next", params=params)
+
+    @Slot()
+    def spotifyPreviousTrack(self):
+        params = {"device_id": self._spotify_selected_device_id} if self._spotify_selected_device_id else None
+        self._spotify_control("POST", "/v1/me/player/previous", params=params)
+
+    @Slot(int)
+    def spotifySetVolume(self, volume):
+        safe_volume = max(0, min(100, int(volume)))
+        self._spotify_volume = safe_volume
+        self.spotifyChanged.emit()
+        params = {"volume_percent": safe_volume}
+        if self._spotify_selected_device_id:
+            params["device_id"] = self._spotify_selected_device_id
+        self._spotify_control("PUT", "/v1/me/player/volume", params=params)
+
+    @Slot(str)
+    def spotifySetDevice(self, device_id):
+        if not device_id:
+            return
+        self._spotify_selected_device_id = device_id
+        self.spotifyChanged.emit()
+        self._spotify_control("PUT", "/v1/me/player", json_body={"device_ids": [device_id], "play": self._spotify_is_playing})
+
     # --- CALENDAR ---
     def _refresh_calendar(self):
         if self._is_fetching_calendar: return
@@ -369,6 +746,9 @@ class SmartClockBackend(QObject):
                 self._set_screen_power(True)
 
         if self.TAPO_IP and now.second % 2 == 0: self._check_light_status()
+        if self.SPOTIFY_CLIENT_ID and now.second % 5 == 0 and self._spotify_poll_second != now.second:
+            self._spotify_poll_second = now.second
+            self._spotify_poll()
 
     def _check_alarms(self, now_dt):
         current_time_str = now_dt.strftime("%H:%M")
