@@ -466,7 +466,7 @@ ApplicationWindow {
                         Behavior on color { ColorAnimation { duration: 500 } }
                     }
                     Text {
-                        text: Qt.formatDate(new Date(), "dddd, MMMM d")
+                        text: backend.currentDate
                         color: backend.isNightMode ? "#990000" : "#EEEEEE"
                         font.pixelSize: 22
                         font.weight: Font.DemiBold

@@ -27,6 +27,7 @@ import database
 
 class SmartClockBackend(QObject):
     timeChanged = Signal()
+    dateChanged = Signal()
     alarmTriggered = Signal(str)
     alarmsChanged = Signal()
     nightModeChanged = Signal()
@@ -39,6 +40,7 @@ class SmartClockBackend(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._current_time = ""
+        self._current_date = ""
         self._is_night_mode = False
         self._calendar_events = [] 
         self._is_fetching_calendar = False 
@@ -747,6 +749,7 @@ class SmartClockBackend(QObject):
     def _tick(self):
         now = datetime.now()
         time_str = now.strftime("%H:%M")
+        date_str = f"{now.strftime('%A, %B')} {now.day}"
         
         if time_str != self._current_time:
             self._current_time = time_str
@@ -755,6 +758,10 @@ class SmartClockBackend(QObject):
                 self._check_alarms(now)
                 self._refresh_calendar()
                 if now.minute % 15 == 0: self._fetch_weather()
+        
+        if date_str != self._current_date:
+            self._current_date = date_str
+            self.dateChanged.emit()
 
         # Update Night Mode logic
         is_night = (now.hour >= 22 or now.hour < 5)
@@ -798,6 +805,8 @@ class SmartClockBackend(QObject):
 
     @Property(str, notify=timeChanged)
     def currentTime(self): return self._current_time
+    @Property(str, notify=dateChanged)
+    def currentDate(self): return self._current_date
     @Property(bool, notify=nightModeChanged)
     def isNightMode(self): return self._is_night_mode
     @Property(str, notify=snoozeChanged)
