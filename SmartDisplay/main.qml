@@ -13,6 +13,13 @@ ApplicationWindow {
     Connections {
         target: backend
         function onAlarmTriggered(message) { alarmPopup.open() }
+        function onImagesChanged() {
+            slideshow.images = backend.imageList
+            slideshow.currentIndex = 0
+            bg1.source = slideshow.images.length > 0 ? slideshow.images[0] : ""
+            bg2.source = ""
+            slideshow.showBg1 = true
+        }
     }
 
     // --- SLIDESHOW ---

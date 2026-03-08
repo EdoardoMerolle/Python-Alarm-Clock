@@ -10,6 +10,7 @@ import hashlib
 import base64
 import secrets as pysecrets
 import time
+import re
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlencode, urlparse, parse_qs
 from datetime import datetime, timedelta, date
@@ -18,7 +19,7 @@ from pathlib import Path
 from icalendar import Calendar
 from kasa import Discover
 
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtCore import QObject, Signal, Property, QTimer, Slot, QUrl, Qt
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -36,6 +37,7 @@ class SmartClockBackend(QObject):
     lightStateChanged = Signal()
     snoozeChanged = Signal()
     spotifyChanged = Signal()
+    imagesChanged = Signal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -98,6 +100,12 @@ class SmartClockBackend(QObject):
         self.weather_asset_path = base_path / "assets" / "weather"
         self.weather_asset_path.mkdir(parents=True, exist_ok=True)
         self.spotify_token_file = base_path / "assets" / "spotify_token.json"
+        self.photo_links_file = base_path / "assets" / "photo_links.txt"
+        self.image_cache_path = base_path / "assets" / "image_cache"
+        self.image_cache_path.mkdir(parents=True, exist_ok=True)
+        self.image_source_path = base_path / "assets" / "images"
+        self.image_source_path.mkdir(parents=True, exist_ok=True)
+        self._image_urls = self._load_local_images()
 
         # Audio Setup
         self.player = QMediaPlayer()
@@ -134,6 +142,7 @@ class SmartClockBackend(QObject):
             self._fetch_weather()
             
         self._refresh_calendar()
+        self._refresh_images_async()
         self._load_spotify_token()
         if self._spotify_refresh_token:
             self._spotify_status = "Connecting..."
@@ -733,18 +742,287 @@ class SmartClockBackend(QObject):
     @Property(list, notify=calendarChanged)
     def calendarEvents(self): return self._calendar_events
 
-    @Property(list, constant=True)
+    @Property(list, notify=imagesChanged)
     def imageList(self):
+        return self._image_urls
+
+    def _load_local_images(self):
         image_urls = []
-        base_path = Path(__file__).resolve().parent
-        folder_path = base_path / "assets" / "images"
-        if folder_path.exists():
-            for file in os.listdir(folder_path):
-                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
-                    full_path = folder_path / file
+        if self.image_source_path.exists():
+            for file in os.listdir(self.image_source_path):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                    full_path = self.image_source_path / file
+                    image_urls.append(QUrl.fromLocalFile(str(full_path)).toString())
+        if self.image_cache_path.exists():
+            for file in os.listdir(self.image_cache_path):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                    full_path = self.image_cache_path / file
                     image_urls.append(QUrl.fromLocalFile(str(full_path)).toString())
         random.shuffle(image_urls)
         return image_urls
+
+    def _refresh_images_async(self):
+        print("[Photos] Starting background image refresh...", flush=True)
+        threading.Thread(target=self._worker_refresh_images, daemon=True).start()
+
+    def _worker_refresh_images(self):
+        urls = self._load_photo_links()
+        if not urls:
+            print("[Photos] No remote photo links configured. Using local images only.", flush=True)
+            self._image_urls = self._load_local_images()
+            print(f"[Photos] Slideshow images available: {len(self._image_urls)}", flush=True)
+            self.imagesChanged.emit()
+            return
+        print(f"[Photos] Found {len(urls)} configured photo link(s).", flush=True)
+        downloaded = self._download_remote_images(urls)
+        self._image_urls = self._load_local_images()
+        if downloaded:
+            print(f"[Photos] Refresh complete. Downloaded {downloaded} new image(s). Total slideshow images: {len(self._image_urls)}", flush=True)
+        else:
+            print(f"[Photos] Refresh complete. No new images downloaded. Total slideshow images: {len(self._image_urls)}", flush=True)
+        self.imagesChanged.emit()
+
+    def _load_photo_links(self):
+        if not self.photo_links_file.exists():
+            return []
+        urls = []
+        try:
+            with open(self.photo_links_file, "r", encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if line and not line.startswith("#"):
+                        urls.append(line)
+        except:
+            return []
+        return urls
+
+    def _extract_direct_image_urls(self, source_url):
+        parsed = urlparse(source_url)
+        if parsed.path.lower().endswith((".jpg", ".jpeg", ".png", ".bmp", ".webp")):
+            return [source_url]
+
+        try:
+            response = requests.get(source_url, timeout=12)
+            if response.status_code != 200:
+                return []
+            content = response.text
+            candidates = set()
+            for match in re.findall(r'https?://[^"\\\']+', content):
+                if re.search(r'\.(jpg|jpeg|png|bmp|webp)(\?|$)', match, flags=re.IGNORECASE):
+                    candidates.add(match.replace("\\/", "/"))
+            return list(candidates)
+        except:
+            return []
+
+    def _extract_icloud_shared_album_token(self, source_url):
+        parsed = urlparse(source_url.strip())
+        host = (parsed.netloc or "").lower()
+        path = (parsed.path or "").lower()
+        fragment = (parsed.fragment or "").strip()
+
+        if "icloud.com" not in host or "sharedalbum" not in path or not fragment:
+            return None
+
+        token = fragment.split(";")[0].strip()
+        if not re.match(r"^[A-Za-z0-9]{6,}$", token):
+            return None
+        return token
+
+    def _decode_icloud_server_partition(self, token):
+        chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+        if len(token) < 2:
+            return None
+        try:
+            if token[0] == "A":
+                return chars.index(token[1])
+            if len(token) < 3:
+                return None
+            return (chars.index(token[1]) * 62) + chars.index(token[2])
+        except ValueError:
+            return None
+
+    def _collect_photo_guids(self, value, out):
+        if isinstance(value, dict):
+            guid = value.get("photoGuid")
+            if isinstance(guid, str) and guid:
+                out.add(guid)
+            for child in value.values():
+                self._collect_photo_guids(child, out)
+            return
+        if isinstance(value, list):
+            for child in value:
+                self._collect_photo_guids(child, out)
+
+    def _collect_image_urls(self, value, out):
+        def add_candidate(raw):
+            if not isinstance(raw, str):
+                return
+            url = raw.strip().replace("\\/", "/")
+            if not url:
+                return
+            if url.startswith("//"):
+                url = f"https:{url}"
+            elif not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", url):
+                # iCloud sometimes returns host/path without scheme.
+                if url.startswith(("cvws.icloud-content.com/", "p")) or ".icloud-content.com/" in url or ".icloud.com/" in url:
+                    url = f"https://{url.lstrip('/')}"
+                else:
+                    return
+            out.add(url)
+
+        if isinstance(value, dict):
+            url_location = value.get("url_location")
+            url_path = value.get("url_path")
+            if isinstance(url_location, str) and isinstance(url_path, str):
+                add_candidate(f"{url_location.rstrip('/')}/{url_path.lstrip('/')}")
+
+            for key in ("url", "downloadUrl", "photoUrl", "webAssetUrl"):
+                item = value.get(key)
+                add_candidate(item)
+
+            for child in value.values():
+                self._collect_image_urls(child, out)
+            return
+
+        if isinstance(value, list):
+            for child in value:
+                self._collect_image_urls(child, out)
+            return
+
+        if isinstance(value, str):
+            add_candidate(value)
+
+    def _icloud_sharedstreams_post(self, host, token, path, payload):
+        headers = {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/json",
+            "Origin": "https://www.icloud.com",
+            "Referer": "https://www.icloud.com/"
+        }
+        url = f"https://{host}/{token}/sharedstreams/{path}"
+        print(f"[Photos] iCloud request: POST {path} on {host}", flush=True)
+        started = time.time()
+        try:
+            # iCloud sharedstreams can be very slow to return first payloads.
+            response = requests.post(url, headers=headers, json=payload, timeout=(10, 70))
+        except Exception as e:
+            elapsed = time.time() - started
+            print(f"[Photos] iCloud request error on {path} after {elapsed:.1f}s: {e}", flush=True)
+            return None, host
+
+        redirect_host = response.headers.get("X-Apple-MMe-Host")
+        elapsed = time.time() - started
+        print(f"[Photos] iCloud response {path}: status={response.status_code}, redirectHost={redirect_host or 'none'}, elapsed={elapsed:.1f}s", flush=True)
+        data = None
+        try:
+            data = response.json()
+        except Exception:
+            data = None
+        if isinstance(data, dict) and isinstance(data.get("X-Apple-MMe-Host"), str):
+            redirect_host = data["X-Apple-MMe-Host"]
+
+        if response.status_code == 330 and redirect_host:
+            return None, redirect_host
+        if response.status_code != 200:
+            return None, host
+        return data, host
+
+    def _extract_icloud_shared_album_urls(self, source_url):
+        token = self._extract_icloud_shared_album_token(source_url)
+        if not token:
+            return []
+        print(f"[Photos] iCloud shared album detected. Token: {token[:4]}***", flush=True)
+
+        partition = self._decode_icloud_server_partition(token)
+        if partition is None:
+            print("[Photos] Could not decode iCloud partition from token.", flush=True)
+            return []
+
+        host = f"p{partition:02d}-sharedstreams.icloud.com"
+        print(f"[Photos] iCloud initial sharedstreams host: {host}", flush=True)
+
+        webstream_data = None
+        for attempt in range(1, 3):
+            print(f"[Photos] iCloud webstream attempt {attempt}/2", flush=True)
+            webstream_data, next_host = self._icloud_sharedstreams_post(host, token, "webstream", {"streamCtag": None})
+            host = next_host
+            if webstream_data:
+                break
+        if not webstream_data:
+            print("[Photos] iCloud webstream request failed.", flush=True)
+            return []
+
+        photo_guids = set()
+        self._collect_photo_guids(webstream_data, photo_guids)
+
+        urls = set()
+        self._collect_image_urls(webstream_data, urls)
+
+        if photo_guids:
+            payload = {"photoGuids": list(photo_guids)}
+            for attempt in range(1, 3):
+                print(f"[Photos] iCloud webasseturls attempt {attempt}/2", flush=True)
+                webasset_data, next_host = self._icloud_sharedstreams_post(host, token, "webasseturls", payload)
+                host = next_host
+                if webasset_data:
+                    self._collect_image_urls(webasset_data, urls)
+                    break
+
+        print(f"[Photos] iCloud album resolved. photoGuids={len(photo_guids)}, candidateUrls={len(urls)}", flush=True)
+        return list(urls)
+
+    def _resolve_source_image_urls(self, source_url):
+        icloud_token = self._extract_icloud_shared_album_token(source_url)
+        if icloud_token:
+            return self._extract_icloud_shared_album_urls(source_url)
+        return self._extract_direct_image_urls(source_url)
+
+    def _download_remote_images(self, urls):
+        downloaded = 0
+        min_side_px = 900
+        for source_url in urls:
+            source_downloaded = 0
+            resolved_urls = self._resolve_source_image_urls(source_url)
+            print(f"[Photos] Source: {source_url} -> {len(resolved_urls)} candidate URL(s)", flush=True)
+            for image_url in resolved_urls:
+                try:
+                    response = requests.get(image_url, timeout=15)
+                    if response.status_code != 200:
+                        print(f"[Photos] Skip URL (status {response.status_code}): {image_url[:120]}", flush=True)
+                        continue
+                    content_type = (response.headers.get("content-type") or "").lower()
+                    if content_type and not content_type.startswith("image/"):
+                        print(f"[Photos] Skip URL (non-image content-type {content_type}): {image_url[:120]}", flush=True)
+                        continue
+                    image = QImage.fromData(response.content)
+                    if image.isNull():
+                        print(f"[Photos] Skip URL (invalid image data): {image_url[:120]}", flush=True)
+                        continue
+                    if min(image.width(), image.height()) < min_side_px:
+                        print(f"[Photos] Skip URL (low resolution {image.width()}x{image.height()}): {image_url[:120]}", flush=True)
+                        continue
+                    digest = hashlib.sha256(image_url.encode("utf-8")).hexdigest()
+                    ext = ".jpg"
+                    parsed = urlparse(image_url)
+                    suffix = Path(parsed.path).suffix.lower()
+                    if suffix in [".jpg", ".jpeg", ".png", ".bmp", ".webp"]:
+                        ext = suffix
+                    elif "png" in content_type:
+                        ext = ".png"
+                    elif "webp" in content_type:
+                        ext = ".webp"
+                    target = self.image_cache_path / f"{digest}{ext}"
+                    if target.exists():
+                        continue
+                    with open(target, "wb") as f:
+                        f.write(response.content)
+                    downloaded += 1
+                    source_downloaded += 1
+                except Exception as e:
+                    print(f"[Photos] Download error: {e}", flush=True)
+            print(f"[Photos] Source done: downloaded {source_downloaded} new image(s)", flush=True)
+        return downloaded
 
     def _tick(self):
         now = datetime.now()

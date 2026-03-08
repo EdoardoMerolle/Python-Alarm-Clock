@@ -1,5 +1,6 @@
 /SmartDisplay/.venv
 /SmartDisplay/assets/images
+/SmartDisplay/assets/image_cache
 /SmartDisplay/__pycache__
 /SmartDisplay/assets/secrets.json
 SmartDisplay/alarms.db
