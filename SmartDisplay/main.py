@@ -996,6 +996,14 @@ class SmartClockBackend(QObject):
             return self._extract_icloud_shared_album_urls(source_url)
         return self._extract_direct_image_urls(source_url)
 
+    def _cache_key_for_image_url(self, image_url):
+        parsed = urlparse(image_url)
+        host = (parsed.netloc or "").lower()
+        # iCloud rotates signed query params; path is stable for the same asset.
+        if "icloud-content.com" in host and parsed.path:
+            return f"{host}{parsed.path}"
+        return image_url
+
     def _download_remote_images(self, urls):
         downloaded = 0
         min_side_px = 900
@@ -1020,7 +1028,8 @@ class SmartClockBackend(QObject):
                     if min(image.width(), image.height()) < min_side_px:
                         print(f"[Photos] Skip URL (low resolution {image.width()}x{image.height()}): {image_url[:120]}", flush=True)
                         continue
-                    digest = hashlib.sha256(image_url.encode("utf-8")).hexdigest()
+                    cache_key = self._cache_key_for_image_url(image_url)
+                    digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
                     ext = ".jpg"
                     parsed = urlparse(image_url)
                     suffix = Path(parsed.path).suffix.lower()
