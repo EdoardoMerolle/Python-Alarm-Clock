@@ -999,9 +999,17 @@ class SmartClockBackend(QObject):
     def _cache_key_for_image_url(self, image_url):
         parsed = urlparse(image_url)
         host = (parsed.netloc or "").lower()
-        # iCloud rotates signed query params; path is stable for the same asset.
-        if "icloud-content.com" in host and parsed.path:
-            return f"{host}{parsed.path}"
+        # iCloud rotates signed query params frequently.
+        # Prefer stable asset id from query param "r" when available.
+        if "icloud-content.com" in host:
+            try:
+                asset_id = parse_qs(parsed.query).get("r", [None])[0]
+            except:
+                asset_id = None
+            if asset_id:
+                return f"icloud-asset:{asset_id}"
+            if parsed.path:
+                return f"{host}{parsed.path}"
         return image_url
 
     def _download_remote_images(self, urls):
@@ -1011,7 +1019,12 @@ class SmartClockBackend(QObject):
             source_downloaded = 0
             resolved_urls = self._resolve_source_image_urls(source_url)
             print(f"[Photos] Source: {source_url} -> {len(resolved_urls)} candidate URL(s)", flush=True)
+            deduped = {}
             for image_url in resolved_urls:
+                deduped[self._cache_key_for_image_url(image_url)] = image_url
+            print(f"[Photos] Source deduped to {len(deduped)} cache key(s)", flush=True)
+
+            for cache_key, image_url in deduped.items():
                 try:
                     response = requests.get(image_url, timeout=15)
                     if response.status_code != 200:
@@ -1028,7 +1041,6 @@ class SmartClockBackend(QObject):
                     if min(image.width(), image.height()) < min_side_px:
                         print(f"[Photos] Skip URL (low resolution {image.width()}x{image.height()}): {image_url[:120]}", flush=True)
                         continue
-                    cache_key = self._cache_key_for_image_url(image_url)
                     digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
                     ext = ".jpg"
                     parsed = urlparse(image_url)
