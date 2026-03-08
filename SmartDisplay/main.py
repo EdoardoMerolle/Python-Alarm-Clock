@@ -96,11 +96,13 @@ class SmartClockBackend(QObject):
         base_path = Path(__file__).resolve().parent
         self.cal_path = base_path / "assets" / "calendars"
         self.cal_path.mkdir(parents=True, exist_ok=True)
-        self.cal_links_file = base_path / "assets" / "calendar_links.txt"
+        self.cal_links_file = base_path / "assets" / "calendar_links.json"
+        self.cal_links_legacy_file = base_path / "assets" / "calendar_links.txt"
         self.weather_asset_path = base_path / "assets" / "weather"
         self.weather_asset_path.mkdir(parents=True, exist_ok=True)
         self.spotify_token_file = base_path / "assets" / "spotify_token.json"
-        self.photo_links_file = base_path / "assets" / "photo_links.txt"
+        self.photo_links_file = base_path / "assets" / "photo_links.json"
+        self.photo_links_legacy_file = base_path / "assets" / "photo_links.txt"
         self.image_cache_path = base_path / "assets" / "image_cache"
         self.image_cache_path.mkdir(parents=True, exist_ok=True)
         self.image_source_path = base_path / "assets" / "images"
@@ -705,14 +707,11 @@ class SmartClockBackend(QObject):
                         try:
                             with open(self.cal_path / file, 'rb') as f: self._parse_ical_data(f.read(), events, now)
                         except: pass
-            if self.cal_links_file.exists():
+            urls = self._load_url_links(self.cal_links_file, self.cal_links_legacy_file)
+            for url in urls:
                 try:
-                    with open(self.cal_links_file, 'r') as f: urls = [l.strip() for l in f if l.strip()]
-                    for url in urls:
-                        try:
-                            r = requests.get(url, timeout=5)
-                            if r.status_code == 200: self._parse_ical_data(r.content, events, now)
-                        except: pass
+                    r = requests.get(url, timeout=5)
+                    if r.status_code == 200: self._parse_ical_data(r.content, events, now)
                 except: pass
             events.sort(key=lambda x: x['sort_date'])
             self._calendar_events = events 
@@ -783,18 +782,37 @@ class SmartClockBackend(QObject):
         self.imagesChanged.emit()
 
     def _load_photo_links(self):
-        if not self.photo_links_file.exists():
-            return []
-        urls = []
-        try:
-            with open(self.photo_links_file, "r", encoding="utf-8") as f:
-                for raw in f:
-                    line = raw.strip()
-                    if line and not line.startswith("#"):
-                        urls.append(line)
-        except:
-            return []
-        return urls
+        return self._load_url_links(self.photo_links_file, self.photo_links_legacy_file)
+
+    def _load_url_links(self, json_path, legacy_txt_path=None):
+        if json_path.exists():
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    links = data.get("links", [])
+                elif isinstance(data, list):
+                    links = data
+                else:
+                    links = []
+                return [u.strip() for u in links if isinstance(u, str) and u.strip()]
+            except Exception as e:
+                print(f"[Links] Failed to read JSON links from {json_path.name}: {e}", flush=True)
+
+        if legacy_txt_path and legacy_txt_path.exists():
+            try:
+                urls = []
+                with open(legacy_txt_path, "r", encoding="utf-8") as f:
+                    for raw in f:
+                        line = raw.strip()
+                        if line and not line.startswith("#"):
+                            urls.append(line)
+                print(f"[Links] Using legacy link file {legacy_txt_path.name}. Consider migrating to {json_path.name}.", flush=True)
+                return urls
+            except Exception as e:
+                print(f"[Links] Failed to read legacy links from {legacy_txt_path.name}: {e}", flush=True)
+
+        return []
 
     def _extract_direct_image_urls(self, source_url):
         parsed = urlparse(source_url)

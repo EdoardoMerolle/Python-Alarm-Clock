@@ -1,6 +1,0 @@
-# One URL per line.
-# You can use direct image links (.jpg/.png/etc) or a public gallery page URL.
-# iCloud shared album links are supported (format: https://www.icloud.com/sharedalbum/#TOKEN).
-# Private iCloud Drive folder links are not accessible without authentication.
-
-https://www.icloud.com/sharedalbum/#B2Q5oqs3qrF4pjg

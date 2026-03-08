@@ -6,3 +6,5 @@
 SmartDisplay/alarms.db
 SmartDisplay/assets/spotify_token.json
 /SmartDisplay/assets/photo_links.txt
+/SmartDisplay/assets/photo_links.json
+/SmartDisplay/assets/calendar_links.json
