@@ -103,11 +103,13 @@ class SmartClockBackend(QObject):
         self.spotify_token_file = base_path / "assets" / "spotify_token.json"
         self.photo_links_file = base_path / "assets" / "photo_links.json"
         self.photo_links_legacy_file = base_path / "assets" / "photo_links.txt"
+        self.photo_rejections_file = base_path / "assets" / "photo_rejections.json"
         self.image_cache_path = base_path / "assets" / "image_cache"
         self.image_cache_path.mkdir(parents=True, exist_ok=True)
         self.image_source_path = base_path / "assets" / "images"
         self.image_source_path.mkdir(parents=True, exist_ok=True)
         self._image_urls = self._load_local_images()
+        self._low_res_rejections = self._load_low_res_rejections()
 
         # Audio Setup
         self.player = QMediaPlayer()
@@ -765,6 +767,10 @@ class SmartClockBackend(QObject):
         threading.Thread(target=self._worker_refresh_images, daemon=True).start()
 
     def _worker_refresh_images(self):
+        removed_before = self._dedupe_cache_by_content()
+        if removed_before:
+            print(f"[Photos] Removed {removed_before} duplicate cached image(s) before refresh.", flush=True)
+
         urls = self._load_photo_links()
         if not urls:
             print("[Photos] No remote photo links configured. Using local images only.", flush=True)
@@ -774,6 +780,9 @@ class SmartClockBackend(QObject):
             return
         print(f"[Photos] Found {len(urls)} configured photo link(s).", flush=True)
         downloaded = self._download_remote_images(urls)
+        removed_after = self._dedupe_cache_by_content()
+        if removed_after:
+            print(f"[Photos] Removed {removed_after} duplicate cached image(s) after refresh.", flush=True)
         self._image_urls = self._load_local_images()
         if downloaded:
             print(f"[Photos] Refresh complete. Downloaded {downloaded} new image(s). Total slideshow images: {len(self._image_urls)}", flush=True)
@@ -1012,9 +1021,47 @@ class SmartClockBackend(QObject):
                 return f"{host}{parsed.path}"
         return image_url
 
+    def _rejection_key_for_image_url(self, image_url):
+        parsed = urlparse(image_url)
+        host = (parsed.netloc or "").lower()
+        if "icloud-content.com" in host and parsed.path:
+            return f"{host}{parsed.path}"
+        return self._cache_key_for_image_url(image_url)
+
+    def _load_low_res_rejections(self):
+        if not self.photo_rejections_file.exists():
+            return set()
+        try:
+            with open(self.photo_rejections_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            items = data.get("low_res_rejections", []) if isinstance(data, dict) else []
+            return {x.strip() for x in items if isinstance(x, str) and x.strip()}
+        except Exception as e:
+            print(f"[Photos] Failed to load photo rejections: {e}", flush=True)
+            return set()
+
+    def _save_low_res_rejections(self):
+        try:
+            payload = {"low_res_rejections": sorted(self._low_res_rejections)}
+            with open(self.photo_rejections_file, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+        except Exception as e:
+            print(f"[Photos] Failed to save photo rejections: {e}", flush=True)
+
     def _download_remote_images(self, urls):
         downloaded = 0
         min_side_px = 900
+        rejections_changed = False
+        cache_content_hashes = set()
+        for file in self.image_cache_path.iterdir():
+            if not file.is_file():
+                continue
+            try:
+                digest = hashlib.sha256(file.read_bytes()).hexdigest()
+                cache_content_hashes.add(digest)
+            except Exception:
+                pass
+
         for source_url in urls:
             source_downloaded = 0
             resolved_urls = self._resolve_source_image_urls(source_url)
@@ -1026,6 +1073,9 @@ class SmartClockBackend(QObject):
 
             for cache_key, image_url in deduped.items():
                 try:
+                    rejection_key = self._rejection_key_for_image_url(image_url)
+                    if rejection_key in self._low_res_rejections:
+                        continue
                     response = requests.get(image_url, timeout=15)
                     if response.status_code != 200:
                         print(f"[Photos] Skip URL (status {response.status_code}): {image_url[:120]}", flush=True)
@@ -1040,6 +1090,11 @@ class SmartClockBackend(QObject):
                         continue
                     if min(image.width(), image.height()) < min_side_px:
                         print(f"[Photos] Skip URL (low resolution {image.width()}x{image.height()}): {image_url[:120]}", flush=True)
+                        self._low_res_rejections.add(rejection_key)
+                        rejections_changed = True
+                        continue
+                    content_digest = hashlib.sha256(response.content).hexdigest()
+                    if content_digest in cache_content_hashes:
                         continue
                     digest = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()
                     ext = ".jpg"
@@ -1058,10 +1113,36 @@ class SmartClockBackend(QObject):
                         f.write(response.content)
                     downloaded += 1
                     source_downloaded += 1
+                    cache_content_hashes.add(content_digest)
                 except Exception as e:
                     print(f"[Photos] Download error: {e}", flush=True)
             print(f"[Photos] Source done: downloaded {source_downloaded} new image(s)", flush=True)
+        if rejections_changed:
+            self._save_low_res_rejections()
+            print(f"[Photos] Saved low-res rejection keys: {len(self._low_res_rejections)}", flush=True)
         return downloaded
+
+    def _dedupe_cache_by_content(self):
+        if not self.image_cache_path.exists():
+            return 0
+        seen = {}
+        removed = 0
+        for file in sorted(self.image_cache_path.iterdir(), key=lambda p: p.name):
+            if not file.is_file():
+                continue
+            try:
+                digest = hashlib.sha256(file.read_bytes()).hexdigest()
+            except Exception:
+                continue
+            if digest in seen:
+                try:
+                    file.unlink()
+                    removed += 1
+                except Exception:
+                    pass
+            else:
+                seen[digest] = file
+        return removed
 
     def _tick(self):
         now = datetime.now()
