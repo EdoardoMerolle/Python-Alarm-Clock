@@ -1152,10 +1152,11 @@ class SmartClockBackend(QObject):
         if time_str != self._current_time:
             self._current_time = time_str
             self.timeChanged.emit()
-            if now.second == 0:
-                self._check_alarms(now)
-                self._refresh_calendar()
-                if now.minute % 15 == 0: self._fetch_weather()
+            # Run minute-based tasks whenever HH:MM changes.
+            self._check_alarms(now)
+            self._refresh_calendar()
+            if now.minute % 15 == 0:
+                self._fetch_weather()
         
         if date_str != self._current_date:
             self._current_date = date_str

@@ -535,6 +535,7 @@ ApplicationWindow {
             id: calendarPage
             Rectangle { anchors.fill: parent; color: "#CC000000" }
             property date viewDate: new Date()
+            property string todayKey: Qt.formatDate(new Date(), "yyyy-MM-dd")
             function daysInMonth(anyDateInMonth) { return new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth() + 1, 0).getDate(); }
             function firstDayOffset(anyDateInMonth) { var d = new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth(), 1); var day = d.getDay(); return day === 0 ? 6 : day - 1; }
             function getCellDate(index) { var firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1); var offset = firstDayOffset(firstDay); return new Date(viewDate.getFullYear(), viewDate.getMonth(), 1 + (index - offset)); }
@@ -547,6 +548,19 @@ ApplicationWindow {
                      if (evIso.substring(0, 10) === checkStr) { dayEvents.push(backend.calendarEvents[i]) }
                 }
                 return dayEvents
+            }
+            Timer {
+                interval: 60000
+                running: true
+                repeat: true
+                onTriggered: calendarPage.todayKey = Qt.formatDate(new Date(), "yyyy-MM-dd")
+            }
+            Connections {
+                target: backend
+                function onDateChanged() {
+                    calendarPage.todayKey = Qt.formatDate(new Date(), "yyyy-MM-dd")
+                    calendarPage.viewDate = new Date()
+                }
             }
 
             ColumnLayout {
@@ -581,7 +595,7 @@ ApplicationWindow {
                         Rectangle {
                             property date myDate: calendarPage.getCellDate(index)
                             property bool isCurrentMonth: myDate.getMonth() === calendarPage.viewDate.getMonth()
-                            property bool isToday: Qt.formatDate(myDate, "yyyy-MM-dd") === Qt.formatDate(new Date(), "yyyy-MM-dd")
+                            property bool isToday: Qt.formatDate(myDate, "yyyy-MM-dd") === calendarPage.todayKey
                             property var myEvents: calendarPage.getEventsForDate(myDate)
                             
                             Layout.fillWidth: true; Layout.fillHeight: true
