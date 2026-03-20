@@ -83,6 +83,10 @@ class SmartClockBackend(QObject):
         self._spotify_lock = threading.Lock()
         self._spotify_poll_lock = threading.Lock()
         self._spotify_poll_inflight = False
+        self._image_refresh_lock = threading.Lock()
+        self._image_refresh_inflight = False
+        self._last_image_refresh_at = 0.0
+        self._image_refresh_interval_seconds = 300
         
         # --- ASYNC SETUP ---
         self._bulb_device = None
@@ -146,7 +150,7 @@ class SmartClockBackend(QObject):
             self._fetch_weather()
             
         self._refresh_calendar()
-        self._refresh_images_async()
+        self._refresh_images_async(force=True)
         self._load_spotify_token()
         if self._spotify_refresh_token:
             self._spotify_status = "Connecting..."
@@ -762,33 +766,47 @@ class SmartClockBackend(QObject):
         random.shuffle(image_urls)
         return image_urls
 
-    def _refresh_images_async(self):
+    def _refresh_images_async(self, force=False):
+        now = time.time()
+        if not force and (now - self._last_image_refresh_at) < self._image_refresh_interval_seconds:
+            return
+
+        with self._image_refresh_lock:
+            if self._image_refresh_inflight:
+                return
+            self._image_refresh_inflight = True
+            self._last_image_refresh_at = now
+
         print("[Photos] Starting background image refresh...", flush=True)
         threading.Thread(target=self._worker_refresh_images, daemon=True).start()
 
     def _worker_refresh_images(self):
-        removed_before = self._dedupe_cache_by_content()
-        if removed_before:
-            print(f"[Photos] Removed {removed_before} duplicate cached image(s) before refresh.", flush=True)
+        try:
+            removed_before = self._dedupe_cache_by_content()
+            if removed_before:
+                print(f"[Photos] Removed {removed_before} duplicate cached image(s) before refresh.", flush=True)
 
-        urls = self._load_photo_links()
-        if not urls:
-            print("[Photos] No remote photo links configured. Using local images only.", flush=True)
+            urls = self._load_photo_links()
+            if not urls:
+                print("[Photos] No remote photo links configured. Using local images only.", flush=True)
+                self._image_urls = self._load_local_images()
+                print(f"[Photos] Slideshow images available: {len(self._image_urls)}", flush=True)
+                self.imagesChanged.emit()
+                return
+            print(f"[Photos] Found {len(urls)} configured photo link(s).", flush=True)
+            downloaded = self._download_remote_images(urls)
+            removed_after = self._dedupe_cache_by_content()
+            if removed_after:
+                print(f"[Photos] Removed {removed_after} duplicate cached image(s) after refresh.", flush=True)
             self._image_urls = self._load_local_images()
-            print(f"[Photos] Slideshow images available: {len(self._image_urls)}", flush=True)
+            if downloaded:
+                print(f"[Photos] Refresh complete. Downloaded {downloaded} new image(s). Total slideshow images: {len(self._image_urls)}", flush=True)
+            else:
+                print(f"[Photos] Refresh complete. No new images downloaded. Total slideshow images: {len(self._image_urls)}", flush=True)
             self.imagesChanged.emit()
-            return
-        print(f"[Photos] Found {len(urls)} configured photo link(s).", flush=True)
-        downloaded = self._download_remote_images(urls)
-        removed_after = self._dedupe_cache_by_content()
-        if removed_after:
-            print(f"[Photos] Removed {removed_after} duplicate cached image(s) after refresh.", flush=True)
-        self._image_urls = self._load_local_images()
-        if downloaded:
-            print(f"[Photos] Refresh complete. Downloaded {downloaded} new image(s). Total slideshow images: {len(self._image_urls)}", flush=True)
-        else:
-            print(f"[Photos] Refresh complete. No new images downloaded. Total slideshow images: {len(self._image_urls)}", flush=True)
-        self.imagesChanged.emit()
+        finally:
+            with self._image_refresh_lock:
+                self._image_refresh_inflight = False
 
     def _load_photo_links(self):
         return self._load_url_links(self.photo_links_file, self.photo_links_legacy_file)
@@ -1155,6 +1173,7 @@ class SmartClockBackend(QObject):
             # Run minute-based tasks whenever HH:MM changes.
             self._check_alarms(now)
             self._refresh_calendar()
+            self._refresh_images_async()
             if now.minute % 15 == 0:
                 self._fetch_weather()
         
