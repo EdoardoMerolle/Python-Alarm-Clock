@@ -51,8 +51,8 @@ class SmartClockBackend(QObject):
         self.secrets = self._load_secrets()
 
         # --- 2. CONFIGURATION ---
-        self.LATITUDE = self.secrets.get("latitude", 51.5074)
-        self.LONGITUDE = self.secrets.get("longitude", -0.1278)
+        self.LATITUDE = self.secrets.get("latitude", 53.2587)
+        self.LONGITUDE = self.secrets.get("longitude", -2.1270)
         self.TAPO_IP = self.secrets.get("tapo_ip", "")
         self.TAPO_EMAIL = self.secrets.get("tapo_email", "")
         self.TAPO_PASSWORD = self.secrets.get("tapo_password", "")
