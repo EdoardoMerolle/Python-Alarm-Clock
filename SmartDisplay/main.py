@@ -51,10 +51,8 @@ class SmartClockBackend(QObject):
         self.secrets = self._load_secrets()
 
         # --- 2. CONFIGURATION ---
-        self.LATITUDE = self.secrets.get("latitude")
-        self.LONGITUDE = self.secrets.get("longitude")
-        self.WEATHER_LOCATION = self.secrets.get("weather_location", "").strip()
-        self.WEATHER_COUNTRY_CODE = self.secrets.get("weather_country_code", "").strip()
+        self.LATITUDE = self.secrets.get("latitude", 51.5074)
+        self.LONGITUDE = self.secrets.get("longitude", -0.1278)
         self.TAPO_IP = self.secrets.get("tapo_ip", "")
         self.TAPO_EMAIL = self.secrets.get("tapo_email", "")
         self.TAPO_PASSWORD = self.secrets.get("tapo_password", "")
@@ -146,12 +144,10 @@ class SmartClockBackend(QObject):
         # --- 3. INITIAL LOADS ---
         self._init_x11_defaults() 
         
-        if self.LATITUDE is not None and self.LONGITUDE is not None:
-            self._fetch_weather()
-        elif self.WEATHER_LOCATION:
-            self._resolve_weather_location()
-        else:
+        if "latitude" not in self.secrets:
             self._detect_location()
+        else:
+            self._fetch_weather()
             
         self._refresh_calendar()
         self._refresh_images_async(force=True)
@@ -282,37 +278,6 @@ class SmartClockBackend(QObject):
         except: self._bulb_device = None
 
     # --- LOCATION & WEATHER ---
-    def _resolve_weather_location(self):
-        threading.Thread(target=self._worker_weather_location, daemon=True).start()
-
-    def _worker_weather_location(self):
-        try:
-            params = {
-                "name": self.WEATHER_LOCATION,
-                "count": 1,
-                "language": "en",
-                "format": "json"
-            }
-            if self.WEATHER_COUNTRY_CODE:
-                params["country_code"] = self.WEATHER_COUNTRY_CODE
-
-            response = requests.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params=params,
-                timeout=10
-            )
-            if response.status_code == 200:
-                results = response.json().get("results", [])
-                if results:
-                    self.LATITUDE = results[0].get("latitude")
-                    self.LONGITUDE = results[0].get("longitude")
-                    self._fetch_weather()
-                    return
-        except:
-            pass
-
-        self._detect_location()
-
     def _detect_location(self):
         threading.Thread(target=self._worker_location, daemon=True).start()
 
@@ -332,8 +297,6 @@ class SmartClockBackend(QObject):
 
     def _worker_weather(self):
         try:
-            if self.LATITUDE is None or self.LONGITUDE is None:
-                return
             url = f"https://api.open-meteo.com/v1/forecast?latitude={self.LATITUDE}&longitude={self.LONGITUDE}&current_weather=true"
             response = requests.get(url, timeout=10)
             if response.status_code == 200:
