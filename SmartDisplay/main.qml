@@ -243,69 +243,6 @@ ApplicationWindow {
         }
     }
 
-    Popup {
-        id: spotifyDevicesPopup
-        width: 520
-        height: 420
-        anchors.centerIn: parent
-        modal: true
-        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-        background: Rectangle { color: "#1B1B1B"; radius: 20; border.color: "#3DDC97"; border.width: 2 }
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 20
-            spacing: 12
-
-            Text {
-                text: "Spotify Devices"
-                color: "white"
-                font.pixelSize: 30
-                font.bold: true
-                Layout.alignment: Qt.AlignHCenter
-            }
-
-            ListView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                spacing: 10
-                model: backend.spotifyDevices
-
-                delegate: Button {
-                    width: parent.width
-                    height: 68
-                    background: Rectangle {
-                        color: modelData.is_active ? "#2A3A2F" : "#252525"
-                        radius: 12
-                        border.color: modelData.is_active ? "#3DDC97" : "#3A3A3A"
-                        border.width: 1
-                    }
-                    contentItem: RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: 15
-                        anchors.rightMargin: 15
-                        spacing: 8
-                        Text { text: modelData.name; color: "white"; font.pixelSize: 20; font.bold: true; Layout.fillWidth: true; elide: Text.ElideRight }
-                        Text { text: modelData.type; color: "#A8A8A8"; font.pixelSize: 15 }
-                    }
-                    onClicked: {
-                        backend.spotifySetDevice(modelData.id)
-                        spotifyDevicesPopup.close()
-                    }
-                }
-            }
-
-            Button {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 50
-                background: Rectangle { color: "#2A2A2A"; radius: 10 }
-                contentItem: Text { text: "Close"; color: "white"; font.pixelSize: 20; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                onClicked: spotifyDevicesPopup.close()
-            }
-        }
-    }
-
     // --- MAIN INTERFACE ---
     SwipeView {
         id: swipeView
@@ -520,6 +457,42 @@ ApplicationWindow {
                 onClicked: backend.toggleLight()
             }
 
+            // Enable or disable the automatic night schedule.
+            Rectangle {
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.topMargin: 20
+                width: 290
+                height: 64
+                radius: 16
+                color: "#CC111111"
+                border.color: backend.isNightMode ? "#663333" : "#555555"
+
+                Switch {
+                    id: nightModeSwitch
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    checked: backend.nightModeEnabled
+                    onToggled: backend.setNightModeEnabled(checked)
+                    text: "Scheduled night mode"
+                    contentItem: Column {
+                        leftPadding: nightModeSwitch.indicator.width + nightModeSwitch.spacing
+                        anchors.verticalCenter: parent.verticalCenter
+                        Text {
+                            text: "Scheduled night mode"
+                            color: backend.isNightMode ? "#FF8888" : "white"
+                            font.pixelSize: 16
+                            font.bold: true
+                        }
+                        Text {
+                            text: backend.nightModeEnabled ? "10pm–6am" : "Off · day mode always"
+                            color: backend.isNightMode ? "#BB7777" : "#BBBBBB"
+                            font.pixelSize: 13
+                        }
+                    }
+                }
+            }
+
             // --- CLOSE BUTTON (Top Right) ---
             Button {
                 width: 50; height: 50
@@ -641,350 +614,8 @@ ApplicationWindow {
                 }
             }
         }
-
-        // PAGE 4: SPOTIFY
-        Item {
-            id: spotifyPage
-            property bool controlsVisible: false
-            function revealControls() {
-                controlsVisible = true
-                controlsHideTimer.restart()
-            }
-
-            Timer {
-                id: controlsHideTimer
-                interval: 5000
-                repeat: false
-                onTriggered: spotifyPage.controlsVisible = false
-            }
-
-            Rectangle { anchors.fill: parent; color: "#10141B" }
-
-            Image {
-                anchors.fill: parent
-                source: backend.spotifyAlbumArt
-                fillMode: Image.PreserveAspectCrop
-                visible: backend.spotifyAlbumArt !== ""
-                opacity: 0.35
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#6D1A202A" }
-                    GradientStop { position: 0.52; color: "#8A12161E" }
-                    GradientStop { position: 1.0; color: "#E2080A10" }
-                }
-            }
-
-            Rectangle {
-                anchors.left: parent.left
-                anchors.top: parent.top
-                anchors.leftMargin: 24
-                anchors.topMargin: 18
-                width: Math.min(parent.width * 0.48, 460)
-                height: 66
-                radius: 3
-                color: "#50000000"
-                border.color: "#44FFFFFF"
-                border.width: 1
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 12
-                    anchors.rightMargin: 12
-                    spacing: 10
-                    Text {
-                        text: "♪"
-                        color: "#E5E5E5"
-                        font.pixelSize: 20
-                        font.bold: true
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 1
-                        Text {
-                            text: "PLAYING ON"
-                            color: "#D0D0D0"
-                            font.pixelSize: 10
-                            font.bold: true
-                            font.letterSpacing: 1.0
-                        }
-                        Text {
-                            text: backend.spotifyDeviceName
-                            color: "white"
-                            font.pixelSize: 16
-                            font.bold: true
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.rightMargin: 24
-                anchors.topMargin: 18
-                width: Math.min(parent.width * 0.32, 300)
-                height: 66
-                radius: 3
-                color: "#65000000"
-                border.color: "#44FFFFFF"
-                border.width: 1
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 10
-                    Rectangle {
-                        Layout.preferredWidth: 48
-                        Layout.preferredHeight: 48
-                        radius: 2
-                        color: "#27313E"
-                        clip: true
-                        Image {
-                            anchors.fill: parent
-                            source: backend.spotifyAlbumArt
-                            fillMode: Image.PreserveAspectCrop
-                            visible: backend.spotifyAlbumArt !== ""
-                        }
-                    }
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 0
-                        Text {
-                            text: "NOW PLAYING"
-                            color: "#D8D8D8"
-                            font.pixelSize: 10
-                            font.bold: true
-                            font.letterSpacing: 0.8
-                        }
-                        Text {
-                            text: backend.spotifyTrack
-                            color: "white"
-                            font.pixelSize: 15
-                            font.bold: true
-                            elide: Text.ElideRight
-                            Layout.fillWidth: true
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                id: albumThumb
-                width: 88
-                height: 88
-                radius: 4
-                color: "#2B3340"
-                anchors.left: parent.left
-                anchors.bottom: parent.bottom
-                anchors.leftMargin: spotifyPage.controlsVisible ? 28 : 50
-                anchors.bottomMargin: spotifyPage.controlsVisible ? 200 : 72
-                clip: true
-                z: 20
-                Behavior on anchors.leftMargin { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                Behavior on anchors.bottomMargin { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                Image {
-                    anchors.fill: parent
-                    source: backend.spotifyAlbumArt
-                    fillMode: Image.PreserveAspectCrop
-                    visible: backend.spotifyAlbumArt !== ""
-                }
-                Text {
-                    anchors.centerIn: parent
-                    text: "♪"
-                    color: "#6A7A8B"
-                    visible: backend.spotifyAlbumArt === ""
-                    font.pixelSize: 46
-                    font.bold: true
-                }
-            }
-
-            Column {
-                anchors.left: albumThumb.right
-                anchors.right: parent.right
-                anchors.rightMargin: 50
-                anchors.bottom: parent.bottom
-                anchors.leftMargin: 22
-                anchors.bottomMargin: spotifyPage.controlsVisible ? 216 : 86
-                spacing: 3
-                z: 20
-                Behavior on anchors.bottomMargin { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                Text {
-                    text: backend.spotifyTrack
-                    color: "white"
-                    font.pixelSize: 54
-                    font.bold: true
-                    elide: Text.ElideRight
-                    width: parent.width
-                }
-                Text {
-                    text: backend.spotifyArtist
-                    color: "#D4D8DE"
-                    font.pixelSize: 20
-                    font.bold: true
-                    elide: Text.ElideRight
-                    width: parent.width
-                }
-            }
-
-            Rectangle {
-                id: quickControls
-                width: 290
-                height: 86
-                radius: 18
-                color: "#A3151B24"
-                border.color: "#4EA58A"
-                border.width: 1
-                x: (parent.width - width) / 2
-                y: spotifyPage.controlsVisible ? (parent.height * 0.47) : (parent.height + 20)
-                opacity: spotifyPage.controlsVisible ? 1.0 : 0.0
-                z: 30
-                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                Behavior on opacity { NumberAnimation { duration: 180 } }
-
-                RowLayout {
-                    anchors.centerIn: parent
-                    spacing: 14
-                    Button {
-                        Layout.preferredWidth: 72
-                        Layout.preferredHeight: 58
-                        background: Rectangle { color: "#2A3340"; radius: 12; border.color: "#54708C"; border.width: 1 }
-                        contentItem: Text { text: "PREV"; color: "#F4F7FB"; font.pixelSize: 18; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: { spotifyPage.revealControls(); backend.spotifyPreviousTrack() }
-                    }
-                    Button {
-                        Layout.preferredWidth: 96
-                        Layout.preferredHeight: 58
-                        background: Rectangle { color: "#46D89C"; radius: 12 }
-                        contentItem: Text { text: backend.spotifyIsPlaying ? "PAUSE" : "PLAY"; color: "#0E1A15"; font.pixelSize: 18; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: { spotifyPage.revealControls(); backend.spotifyTogglePlayPause() }
-                    }
-                    Button {
-                        Layout.preferredWidth: 72
-                        Layout.preferredHeight: 58
-                        background: Rectangle { color: "#2A3340"; radius: 12; border.color: "#54708C"; border.width: 1 }
-                        contentItem: Text { text: "NEXT"; color: "#F4F7FB"; font.pixelSize: 18; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: { spotifyPage.revealControls(); backend.spotifyNextTrack() }
-                    }
-                }
-            }
-
-            Rectangle {
-                id: optionsPanel
-                width: Math.min(parent.width * 0.82, 860)
-                height: 82
-                radius: 14
-                color: "#B00D121A"
-                border.color: "#3AFFFFFF"
-                border.width: 1
-                x: (parent.width - width) / 2
-                y: spotifyPage.controlsVisible ? (quickControls.y + quickControls.height + 14) : (parent.height + 20)
-                opacity: spotifyPage.controlsVisible ? 1.0 : 0.0
-                z: 29
-                Behavior on y { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
-                Behavior on opacity { NumberAnimation { duration: 180 } }
-
-                RowLayout {
-                    anchors.fill: parent
-                    anchors.leftMargin: 16
-                    anchors.rightMargin: 16
-                    spacing: 12
-
-                    Button {
-                        Layout.preferredWidth: 110
-                        Layout.preferredHeight: 46
-                        background: Rectangle { color: "#243F35"; radius: 10; border.color: "#4FAF83"; border.width: 1 }
-                        contentItem: Text { text: "Devices"; color: "#AEEED0"; font.pixelSize: 15; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
-                        onClicked: { spotifyPage.revealControls(); backend.spotifyRefresh(); spotifyDevicesPopup.open() }
-                    }
-                    Button {
-                        Layout.preferredWidth: 106
-                        Layout.preferredHeight: 46
-                        background: Rectangle {
-                            color: backend.spotifyConnected ? "#2F343A" : "#3E2C20"
-                            radius: 10
-                            border.color: backend.spotifyConnected ? "#6A7179" : "#B0864D"
-                            border.width: 1
-                        }
-                        contentItem: Text {
-                            text: backend.spotifyConnected ? "Relink" : "Connect"
-                            color: backend.spotifyConnected ? "#F2F2F2" : "#F4D4A1"
-                            font.pixelSize: 15
-                            font.bold: true
-                            horizontalAlignment: Text.AlignHCenter
-                            verticalAlignment: Text.AlignVCenter
-                        }
-                        onClicked: { spotifyPage.revealControls(); backend.spotifyStartAuth() }
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    Text {
-                        text: "Vol"
-                        color: "#CFD8E4"
-                        font.pixelSize: 14
-                        font.bold: true
-                    }
-                    Slider {
-                        id: spotifyVolumeSlider
-                        Layout.preferredWidth: Math.min(parent.width * 0.30, 300)
-                        from: 0
-                        to: 100
-                        value: backend.spotifyVolume
-                        onMoved: {
-                            spotifyPage.revealControls()
-                            backend.spotifySetVolume(Math.round(value))
-                        }
-                        background: Rectangle {
-                            x: spotifyVolumeSlider.leftPadding
-                            y: spotifyVolumeSlider.topPadding + spotifyVolumeSlider.availableHeight / 2 - height / 2
-                            width: spotifyVolumeSlider.availableWidth
-                            height: 6
-                            radius: 3
-                            color: "#334354"
-                            Rectangle {
-                                width: spotifyVolumeSlider.visualPosition * parent.width
-                                height: parent.height
-                                radius: 3
-                                color: "#45D89A"
-                            }
-                        }
-                        handle: Rectangle {
-                            x: spotifyVolumeSlider.leftPadding + spotifyVolumeSlider.visualPosition * (spotifyVolumeSlider.availableWidth - width)
-                            y: spotifyVolumeSlider.topPadding + spotifyVolumeSlider.availableHeight / 2 - height / 2
-                            implicitWidth: 16
-                            implicitHeight: 16
-                            radius: 8
-                            color: "#E9FCF2"
-                            border.color: "#3EA276"
-                            border.width: 1
-                        }
-                    }
-                    Text {
-                        text: Math.round(spotifyVolumeSlider.value) + "%"
-                        color: "#CFD8E4"
-                        font.pixelSize: 13
-                        Layout.preferredWidth: 42
-                        horizontalAlignment: Text.AlignRight
-                    }
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                z: 10
-                onPressed: {
-                    spotifyPage.revealControls()
-                    mouse.accepted = false
-                }
-            }
-        }
     }
-    
+
     PageIndicator {
         count: swipeView.count; currentIndex: swipeView.currentIndex
         anchors.bottom: parent.bottom; anchors.horizontalCenter: parent.horizontalCenter; anchors.bottomMargin: 20

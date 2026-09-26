@@ -1,0 +1,6 @@
+PySide6==6.11.2
+requests==2.34.2
+icalendar==7.3.0
+python-kasa==0.10.2
+# Provides the pygame import used by the legacy audio.py module.
+pygame-ce==2.5.8

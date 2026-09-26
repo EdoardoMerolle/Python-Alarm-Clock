@@ -1,17 +1,13 @@
 #!/bin/bash
+set -euo pipefail
 
-# 1. Navigate to the directory where this script is located
-# This ensures the app finds 'assets/' correctly no matter where you run the script from.
-cd "$(dirname "$0")"
+# Resolve assets, QML, and the database relative to this script.
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 
-# 2. Check if the .venv directory exists
-if [ -d ".venv" ]; then
-    # Activate the virtual environment
-    source .venv/bin/activate
-else
-    echo "Error: .venv directory not found."
+if [[ ! -x .venv/bin/python ]]; then
+    echo "Error: .venv is missing. Create it and install requirements.txt first." >&2
     exit 1
 fi
 
-# 3. Run the application
-python main.py
+# Use the project's interpreter regardless of the caller's active environment.
+exec .venv/bin/python main.py "$@"
