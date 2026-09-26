@@ -16,7 +16,7 @@ class AudioManager:
 
     def _load_sound(self):
         # Path to your sound file
-        sound_path = os.path.join("assets", "sounds", "alarm.mp3")
+        sound_path = os.path.join("assets", "sounds", "alarm.wav")
         
         if os.path.exists(sound_path):
             try:

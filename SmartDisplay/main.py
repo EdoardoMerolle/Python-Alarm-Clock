@@ -105,7 +105,7 @@ class SmartClockBackend(QObject):
         self.player = QMediaPlayer()
         self.audio_output = QAudioOutput()
         self.player.setAudioOutput(self.audio_output)
-        sound_path = base_path / "assets" / "sounds" / "alarm.mp3"
+        sound_path = base_path / "assets" / "sounds" / "alarm.wav"
         self.player.setSource(QUrl.fromLocalFile(str(sound_path)))
         self.audio_output.setVolume(1.0)
         self.player.setLoops(QMediaPlayer.Loops.Infinite)
