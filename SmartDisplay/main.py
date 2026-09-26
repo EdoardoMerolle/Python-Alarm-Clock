@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, date
 from pathlib import Path
 
 from icalendar import Calendar
-from kasa import Discover
+from kasa import Discover, DeviceType
 
 from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtQml import QQmlApplicationEngine
@@ -52,7 +52,6 @@ class SmartClockBackend(QObject):
         # --- 2. CONFIGURATION ---
         self.LATITUDE = self.secrets.get("latitude", 53.2587)
         self.LONGITUDE = self.secrets.get("longitude", -2.1270)
-        self.TAPO_IP = self.secrets.get("tapo_ip", "")
         self.TAPO_EMAIL = self.secrets.get("tapo_email", "")
         self.TAPO_PASSWORD = self.secrets.get("tapo_password", "")
         
@@ -70,6 +69,11 @@ class SmartClockBackend(QObject):
         
         # --- ASYNC SETUP ---
         self._bulb_device = None
+        self._bulb_mac = self._settings.value("tapoBulbMac", "", type=str)
+        self._tapo_lock = asyncio.Lock()
+        self._tapo_status_future = None
+        self._tapo_toggle_future = None
+        self._next_tapo_discovery = 0.0
         self.tapo_loop = asyncio.new_event_loop()
         self.tapo_thread = threading.Thread(target=self._run_tapo_loop, daemon=True)
         self.tapo_thread.start()
@@ -198,50 +202,103 @@ class SmartClockBackend(QObject):
 
     @Slot()
     def toggleLight(self):
-        self._light_is_on = not self._light_is_on
-        self.lightStateChanged.emit()
-        asyncio.run_coroutine_threadsafe(self._async_tapo_toggle(), self.tapo_loop)
+        if self._tapo_toggle_future is None or self._tapo_toggle_future.done():
+            self._tapo_toggle_future = asyncio.run_coroutine_threadsafe(
+                self._async_tapo_toggle(), self.tapo_loop
+            )
 
     def _check_light_status(self):
-        asyncio.run_coroutine_threadsafe(self._async_tapo_status(), self.tapo_loop)
+        if self._tapo_status_future is None or self._tapo_status_future.done():
+            self._tapo_status_future = asyncio.run_coroutine_threadsafe(
+                self._async_tapo_status(), self.tapo_loop
+            )
+
+    async def _disconnect_tapo(self, device):
+        try:
+            await device.disconnect()
+        except Exception:
+            pass
 
     async def _get_bulb(self):
-        if self._bulb_device: return self._bulb_device
-        if not self.TAPO_IP: return None
+        # Called under _tapo_lock so discovery and bulb operations never overlap.
+        if self._bulb_device:
+            return self._bulb_device
+        if not self.TAPO_EMAIL or not self.TAPO_PASSWORD:
+            return None
+        if time.monotonic() < self._next_tapo_discovery:
+            return None
+        self._next_tapo_discovery = time.monotonic() + 30
+        devices = {}
         try:
-            dev = await Discover.discover_single(
-                self.TAPO_IP, 
-                username=self.TAPO_EMAIL, 
-                password=self.TAPO_PASSWORD
+            devices = await Discover.discover(
+                username=self.TAPO_EMAIL,
+                password=self.TAPO_PASSWORD,
+                discovery_timeout=5,
+                timeout=5,
             )
-            await dev.update()
-            self._bulb_device = dev
-            return dev
-        except: return None
+            bulbs = []
+            for device in devices.values():
+                try:
+                    await device.update()
+                    if device.device_type == DeviceType.Bulb:
+                        bulbs.append(device)
+                except Exception:
+                    continue
+            if self._bulb_mac:
+                matches = [bulb for bulb in bulbs if bulb.mac == self._bulb_mac]
+            else:
+                matches = bulbs
+            if len(matches) != 1:
+                message = "Multiple bulbs found; select a bulb before connecting." if len(matches) > 1 else "Bulb not found or authentication failed; retrying in 30 seconds."
+                print(f"[Tapo] {message}", flush=True)
+                return None
+            self._bulb_device = matches[0]
+            self._bulb_mac = self._bulb_device.mac
+            # Use a worker-local QSettings instance, not the GUI thread's instance.
+            settings = QSettings("SmartDisplay", "SmartDisplay")
+            settings.setValue("tapoBulbMac", self._bulb_mac)
+            settings.sync()
+            print("[Tapo] Discovered and connected to bulb.", flush=True)
+            return self._bulb_device
+        except Exception as error:
+            print(f"[Tapo] Discovery failed ({type(error).__name__}); retrying in 30 seconds.", flush=True)
+            return None
+        finally:
+            for device in devices.values():
+                if device is not self._bulb_device:
+                    await self._disconnect_tapo(device)
 
     async def _async_tapo_toggle(self):
-        bulb = await self._get_bulb()
-        if not bulb: return
-        try:
-            await bulb.update()
-            if bulb.is_on:
-                await bulb.turn_off()
-                self._light_is_on = False
-            else:
-                await bulb.turn_on()
-                self._light_is_on = True
-            self.lightStateChanged.emit()
-        except: self._bulb_device = None
-
-    async def _async_tapo_status(self):
-        bulb = await self._get_bulb()
-        if not bulb: return
-        try:
-            await bulb.update()
-            if self._light_is_on != bulb.is_on:
+        async with self._tapo_lock:
+            bulb = await self._get_bulb()
+            if not bulb:
+                return
+            try:
+                await bulb.update()
+                if bulb.is_on:
+                    await bulb.turn_off()
+                else:
+                    await bulb.turn_on()
+                await bulb.update()
                 self._light_is_on = bulb.is_on
                 self.lightStateChanged.emit()
-        except: self._bulb_device = None
+            except Exception:
+                self._bulb_device = None
+                await self._disconnect_tapo(bulb)
+
+    async def _async_tapo_status(self):
+        async with self._tapo_lock:
+            bulb = await self._get_bulb()
+            if not bulb:
+                return
+            try:
+                await bulb.update()
+                if self._light_is_on != bulb.is_on:
+                    self._light_is_on = bulb.is_on
+                    self.lightStateChanged.emit()
+            except Exception:
+                self._bulb_device = None
+                await self._disconnect_tapo(bulb)
 
     # --- LOCATION & WEATHER ---
     def _detect_location(self):
@@ -786,7 +843,7 @@ class SmartClockBackend(QObject):
 
         self._update_night_mode(now)
 
-        if self.TAPO_IP and now.second % 2 == 0: self._check_light_status()
+        if self.TAPO_EMAIL and self.TAPO_PASSWORD and now.second % 2 == 0: self._check_light_status()
 
     def _update_night_mode(self, now):
         # Scheduled night mode: 22:00 inclusive to 06:00 exclusive.
