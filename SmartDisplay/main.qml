@@ -252,9 +252,63 @@ ApplicationWindow {
         // PAGE 1: ALARMS
         Item {
             Rectangle { anchors.fill: parent; color: "#CC000000" }
+            // Automatic schedule or a persistent manual override.
+            Rectangle {
+                anchors.top: parent.top
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.topMargin: 20
+                width: 360
+                height: 88
+                radius: 16
+                color: "#CC111111"
+                border.color: backend.isNightMode ? "#663333" : "#555555"
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    spacing: 4
+                    Text {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: "Night mode · " + (backend.nightModeSetting === "auto" ? "10pm–6am" : backend.nightModeSetting === "on" ? "Always on" : "Always off")
+                        color: backend.isNightMode ? "#FF8888" : "white"
+                        font.pixelSize: 16
+                        font.bold: true
+                    }
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
+                        Repeater {
+                            model: ["auto", "on", "off"]
+                            Button {
+                                required property string modelData
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 40
+                                text: modelData.charAt(0).toUpperCase() + modelData.slice(1)
+                                checked: backend.nightModeSetting === modelData
+                                onClicked: backend.setNightModeSetting(modelData)
+                                background: Rectangle {
+                                    radius: 10
+                                    color: parent.checked ? (backend.isNightMode ? "#772222" : "#256AA8") : "#333333"
+                                    border.color: parent.checked ? "#BBBBBB" : "#555555"
+                                }
+                                contentItem: Text {
+                                    text: parent.text
+                                    color: "white"
+                                    font.pixelSize: 16
+                                    font.bold: parent.checked
+                                    horizontalAlignment: Text.AlignHCenter
+                                    verticalAlignment: Text.AlignVCenter
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             ListView {
                 id: alarmListView
                 anchors.fill: parent; anchors.margins: 30; clip: true; spacing: 20
+                anchors.topMargin: 124 // Keep scrolling alarms below the night-mode selector.
                 model: backend.alarmList
                 property real preservedContentY: 0
                 property bool restoreAfterModelUpdate: false
@@ -455,42 +509,6 @@ ApplicationWindow {
                 }
 
                 onClicked: backend.toggleLight()
-            }
-
-            // Enable or disable the automatic night schedule.
-            Rectangle {
-                anchors.top: parent.top
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.topMargin: 20
-                width: 290
-                height: 64
-                radius: 16
-                color: "#CC111111"
-                border.color: backend.isNightMode ? "#663333" : "#555555"
-
-                Switch {
-                    id: nightModeSwitch
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    checked: backend.nightModeEnabled
-                    onToggled: backend.setNightModeEnabled(checked)
-                    text: "Scheduled night mode"
-                    contentItem: Column {
-                        leftPadding: nightModeSwitch.indicator.width + nightModeSwitch.spacing
-                        anchors.verticalCenter: parent.verticalCenter
-                        Text {
-                            text: "Scheduled night mode"
-                            color: backend.isNightMode ? "#FF8888" : "white"
-                            font.pixelSize: 16
-                            font.bold: true
-                        }
-                        Text {
-                            text: backend.nightModeEnabled ? "10pm–6am" : "Off · day mode always"
-                            color: backend.isNightMode ? "#BB7777" : "#BBBBBB"
-                            font.pixelSize: 13
-                        }
-                    }
-                }
             }
 
             // --- CLOSE BUTTON (Top Right) ---

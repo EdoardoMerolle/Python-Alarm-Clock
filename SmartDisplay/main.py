@@ -29,7 +29,7 @@ class SmartClockBackend(QObject):
     alarmTriggered = Signal(str)
     alarmsChanged = Signal()
     nightModeChanged = Signal()
-    nightModeEnabledChanged = Signal()
+    nightModeSettingChanged = Signal()
     calendarChanged = Signal()
     weatherChanged = Signal()
     lightStateChanged = Signal()
@@ -42,7 +42,7 @@ class SmartClockBackend(QObject):
         self._current_date = ""
         self._is_night_mode = False
         self._settings = QSettings("SmartDisplay", "SmartDisplay")
-        self._night_mode_enabled = self._settings.value("nightModeEnabled", True, type=bool)
+        self._night_mode_setting = self._load_night_mode_setting()
         self._calendar_events = [] 
         self._is_fetching_calendar = False 
         
@@ -790,7 +790,9 @@ class SmartClockBackend(QObject):
 
     def _update_night_mode(self, now):
         # Scheduled night mode: 22:00 inclusive to 06:00 exclusive.
-        is_night = self._night_mode_enabled and (now.hour >= 22 or now.hour < 6)
+        is_night = self._night_mode_setting == "on" or (
+            self._night_mode_setting == "auto" and (now.hour >= 22 or now.hour < 6)
+        )
         if is_night == self._is_night_mode:
             return
         self._is_night_mode = is_night
@@ -798,18 +800,24 @@ class SmartClockBackend(QObject):
         self._fetch_weather()
         self.resetInactivityTimer()
 
-    @Property(bool, notify=nightModeEnabledChanged)
-    def nightModeEnabled(self):
-        return self._night_mode_enabled
+    def _load_night_mode_setting(self):
+        # Preserve the previous switch preference when upgrading.
+        fallback = "auto" if self._settings.value("nightModeEnabled", True, type=bool) else "off"
+        mode = self._settings.value("nightModeSetting", fallback, type=str)
+        return mode if mode in ("auto", "on", "off") else fallback
 
-    @Slot(bool)
-    def setNightModeEnabled(self, enabled):
-        if enabled == self._night_mode_enabled:
+    @Property(str, notify=nightModeSettingChanged)
+    def nightModeSetting(self):
+        return self._night_mode_setting
+
+    @Slot(str)
+    def setNightModeSetting(self, mode):
+        if mode not in ("auto", "on", "off") or mode == self._night_mode_setting:
             return
-        self._night_mode_enabled = enabled
-        self._settings.setValue("nightModeEnabled", enabled)
+        self._night_mode_setting = mode
+        self._settings.setValue("nightModeSetting", mode)
         self._settings.sync()
-        self.nightModeEnabledChanged.emit()
+        self.nightModeSettingChanged.emit()
         self._update_night_mode(datetime.now())
 
     def _check_alarms(self, now_dt):
