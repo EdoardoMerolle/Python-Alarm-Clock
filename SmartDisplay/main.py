@@ -15,6 +15,7 @@ from pathlib import Path
 
 from icalendar import Calendar
 from kasa import Discover, DeviceType
+from kasa.exceptions import AuthenticationError
 
 from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtQml import QQmlApplicationEngine
@@ -31,6 +32,7 @@ class SmartClockBackend(QObject):
     nightModeChanged = Signal()
     nightModeSettingChanged = Signal()
     calendarChanged = Signal()
+    _calendarLoaded = Signal(list)
     weatherChanged = Signal()
     lightStateChanged = Signal()
     snoozeChanged = Signal()
@@ -44,7 +46,8 @@ class SmartClockBackend(QObject):
         self._settings = QSettings("SmartDisplay", "SmartDisplay")
         self._night_mode_setting = self._load_night_mode_setting()
         self._calendar_events = [] 
-        self._is_fetching_calendar = False 
+        self._is_fetching_calendar = False
+        self._calendarLoaded.connect(self._apply_calendar_events, Qt.QueuedConnection)
         
         # --- 1. LOAD SECRETS ---
         self.secrets = self._load_secrets()
@@ -229,12 +232,24 @@ class SmartClockBackend(QObject):
             return None
         self._next_tapo_discovery = time.monotonic() + 30
         devices = {}
+        unsupported = []
+
+        async def on_unsupported(error):
+            unsupported.append(error)
+            info = error.discovery_result or {}
+            encryption = info.get("mgt_encrypt_schm", {}).get("encrypt_type")
+            if encryption == "TPAP":
+                print("[Tapo] Bulb uses unsupported TPAP encryption. Enable Third-Party Compatibility in the Tapo app (Me > Third-Party Services).", flush=True)
+            else:
+                print("[Tapo] A device replied but its protocol is unsupported by python-kasa.", flush=True)
+
         try:
             devices = await Discover.discover(
                 username=self.TAPO_EMAIL,
                 password=self.TAPO_PASSWORD,
                 discovery_timeout=5,
                 timeout=5,
+                on_unsupported=on_unsupported,
             )
             bulbs = []
             for device in devices.values():
@@ -242,14 +257,25 @@ class SmartClockBackend(QObject):
                     await device.update()
                     if device.device_type == DeviceType.Bulb:
                         bulbs.append(device)
-                except Exception:
-                    continue
+                except AuthenticationError:
+                    print("[Tapo] Device found, but authentication failed. Check tapo_email and tapo_password.", flush=True)
+                except Exception as error:
+                    print(f"[Tapo] Device found, but status could not be read ({type(error).__name__}).", flush=True)
             if self._bulb_mac:
                 matches = [bulb for bulb in bulbs if bulb.mac == self._bulb_mac]
             else:
                 matches = bulbs
             if len(matches) != 1:
-                message = "Multiple bulbs found; select a bulb before connecting." if len(matches) > 1 else "Bulb not found or authentication failed; retrying in 30 seconds."
+                if len(matches) > 1:
+                    message = "Multiple bulbs found; select a bulb before connecting."
+                elif self._bulb_mac and bulbs:
+                    message = "Bulbs found, but none match the remembered bulb."
+                elif unsupported and not devices:
+                    message = "Only unsupported devices replied; retrying in 30 seconds."
+                elif not devices:
+                    message = "No supported devices replied to discovery; check local-network connectivity."
+                else:
+                    message = "No usable bulb found; see connection errors above. Retrying in 30 seconds."
                 print(f"[Tapo] {message}", flush=True)
                 return None
             self._bulb_device = matches[0]
@@ -363,9 +389,17 @@ class SmartClockBackend(QObject):
         self._is_fetching_calendar = True
         threading.Thread(target=self._worker_fetch_calendars, daemon=True).start()
 
+    @Slot(list)
+    def _apply_calendar_events(self, events):
+        # Publish worker results on the GUI thread, only when the data changed.
+        self._is_fetching_calendar = False
+        if events != self._calendar_events:
+            self._calendar_events = events
+            self.calendarChanged.emit()
+
     def _worker_fetch_calendars(self):
+        events = []
         try:
-            events = []
             now = datetime.now().astimezone()
             if self.cal_path.exists():
                 for file in os.listdir(self.cal_path):
@@ -380,9 +414,8 @@ class SmartClockBackend(QObject):
                     if r.status_code == 200: self._parse_ical_data(r.content, events, now)
                 except: pass
             events.sort(key=lambda x: x['sort_date'])
-            self._calendar_events = events 
-            self.calendarChanged.emit()
-        finally: self._is_fetching_calendar = False
+        finally:
+            self._calendarLoaded.emit(events)
 
     def _parse_ical_data(self, content, events_list, now):
         try:

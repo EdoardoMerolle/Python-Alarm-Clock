@@ -530,15 +530,21 @@ ApplicationWindow {
             function daysInMonth(anyDateInMonth) { return new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth() + 1, 0).getDate(); }
             function firstDayOffset(anyDateInMonth) { var d = new Date(anyDateInMonth.getFullYear(), anyDateInMonth.getMonth(), 1); var day = d.getDay(); return day === 0 ? 6 : day - 1; }
             function getCellDate(index) { var firstDay = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1); var offset = firstDayOffset(firstDay); return new Date(viewDate.getFullYear(), viewDate.getMonth(), 1 + (index - offset)); }
-            function getEventsForDate(dateObj) {
-                var dayEvents = []
-                if (!backend.calendarEvents) return dayEvents 
-                var checkStr = Qt.formatDate(dateObj, "yyyy-MM-dd")
-                for(var i=0; i<backend.calendarEvents.length; i++) {
-                     var evIso = backend.calendarEvents[i].date_iso
-                     if (evIso.substring(0, 10) === checkStr) { dayEvents.push(backend.calendarEvents[i]) }
+            // Read the Python list once per update, not once per event per cell.
+            property var eventsByDate: indexCalendarEvents()
+            function indexCalendarEvents() {
+                var events = backend.calendarEvents || []
+                var grouped = {}
+                for (var i = 0; i < events.length; i++) {
+                    var key = Qt.formatDate(new Date(events[i].date_iso), "yyyy-MM-dd")
+                    if (!grouped[key]) grouped[key] = []
+                    grouped[key].push(events[i])
                 }
-                return dayEvents
+                return grouped
+            }
+            function getEventsForDate(dateObj) {
+                var key = Qt.formatDate(dateObj, "yyyy-MM-dd")
+                return eventsByDate[key] || []
             }
             Timer {
                 interval: 60000
