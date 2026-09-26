@@ -391,10 +391,10 @@ ApplicationWindow {
                 }
             }
             Button {
-                width: 100; height: 100
-                anchors.bottom: parent.bottom; anchors.right: parent.right; anchors.margins: 40
-                background: Rectangle { color: "#4facfe"; radius: 50; border.color: "white"; border.width: 2; layer.enabled: true }
-                contentItem: Text { text: "+"; color: "white"; font.pixelSize: 55; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+                width: 56; height: 56
+                anchors.top: parent.top; anchors.right: parent.right; anchors.margins: 20
+                background: Rectangle { color: "#4facfe"; radius: 28; border.color: "white"; border.width: 2; layer.enabled: true }
+                contentItem: Text { text: "+"; color: "white"; font.pixelSize: 34; font.bold: true; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                 onClicked: {
                     editingAlarmId = null 
                     var now = new Date()
