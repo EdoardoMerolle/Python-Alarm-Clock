@@ -3,12 +3,45 @@ import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
 
 ApplicationWindow {
+    id: window
     visible: true
     visibility: Window.FullScreen // Kiosk mode
     title: "Smart Display"
     color: "#000000"
 
     property var editingAlarmId: null
+    // Share one Python-to-QML snapshot with both calendar displays.
+    property var calendarSnapshot: backend.calendarEvents || []
+    property date eventNow: new Date()
+    property var nextCalendarEvent: findNextEvent(calendarSnapshot, eventNow)
+
+    function findNextEvent(events, now) {
+        var next = null
+        var earliest = Infinity
+        for (var i = 0; i < events.length; i++) {
+            var start = new Date(events[i].date_iso).getTime()
+            if (start >= now.getTime() && start < earliest) {
+                next = events[i]
+                earliest = start
+            }
+        }
+        return next
+    }
+    function nextEventWhen(event, now) {
+        if (!event) return ""
+        var start = new Date(event.date_iso)
+        var tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
+        var day = start.toDateString() === now.toDateString() ? "Today"
+                : start.toDateString() === tomorrow.toDateString() ? "Tomorrow"
+                : Qt.formatDate(start, "ddd d MMM")
+        return day + " · " + Qt.formatTime(start, "HH:mm")
+    }
+    Timer {
+        interval: 1000
+        running: true
+        repeat: true
+        onTriggered: window.eventNow = new Date()
+    }
 
     Connections {
         target: backend
@@ -413,7 +446,7 @@ ApplicationWindow {
                 anchors.bottom: parent.bottom
                 anchors.margins: 30
                 anchors.bottomMargin: 60 
-                width: clockLayout.width + 60 
+                width: Math.min(parent.width - 60, 580)
                 height: clockLayout.height + 40
                 color: backend.isNightMode ? "transparent" : "#AA000000"
                 radius: 25
@@ -424,6 +457,7 @@ ApplicationWindow {
                 ColumnLayout {
                     id: clockLayout
                     anchors.centerIn: parent
+                    width: parent.width - 60
                     spacing: 5 // Added space for weather
 
                     // WEATHER ROW
@@ -470,6 +504,45 @@ ApplicationWindow {
                         font.weight: Font.DemiBold
                         Layout.alignment: Qt.AlignLeft
                         Behavior on color { ColorAnimation { duration: 500 } }
+                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 10
+                        Layout.preferredHeight: upcomingContent.implicitHeight + 20
+                        color: backend.isNightMode ? "#180000" : "#33000000"
+                        radius: 10
+                        ColumnLayout {
+                            id: upcomingContent
+                            anchors.fill: parent
+                            anchors.margins: 10
+                            spacing: 3
+                            Text {
+                                text: window.nextCalendarEvent
+                                      ? "UP NEXT · " + window.nextEventWhen(window.nextCalendarEvent, window.eventNow)
+                                      : "No upcoming calendar events"
+                                color: backend.isNightMode ? "#AA3333" : "#A9D7FF"
+                                font.pixelSize: 16
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                visible: window.nextCalendarEvent !== null
+                                text: window.nextCalendarEvent ? window.nextCalendarEvent.title : ""
+                                color: backend.isNightMode ? "#CC4444" : "white"
+                                font.pixelSize: 21
+                                font.bold: true
+                                Layout.fillWidth: true
+                                elide: Text.ElideRight
+                            }
+                        }
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: {
+                                swipeView.currentIndex = 2
+                                if (window.nextCalendarEvent)
+                                    calendarPage.viewDate = new Date(window.nextCalendarEvent.date_iso)
+                            }
+                        }
                     }
                     Text {
                         text: backend.snoozeStatus
@@ -533,7 +606,7 @@ ApplicationWindow {
             // Read the Python list once per update, not once per event per cell.
             property var eventsByDate: indexCalendarEvents()
             function indexCalendarEvents() {
-                var events = backend.calendarEvents || []
+                var events = window.calendarSnapshot
                 var grouped = {}
                 for (var i = 0; i < events.length; i++) {
                     var key = Qt.formatDate(new Date(events[i].date_iso), "yyyy-MM-dd")

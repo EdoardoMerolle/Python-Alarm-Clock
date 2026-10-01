@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from PySide6.QtCore import QObject, Property, Qt, QUrl
+from PySide6.QtCore import QObject, Property, Qt, QUrl, QDateTime
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtTest import QTest
@@ -67,6 +67,34 @@ class CalendarUiTests(unittest.TestCase):
         self.assertEqual(changes, [threading.get_ident()])
         backend._apply_calendar_events(list(backend._calendar_events))
         self.assertEqual(len(changes), 1)
+
+    def test_clock_upcoming_event_tracks_time_and_feed(self):
+        backend = CalendarBackend()
+        now = datetime.now().astimezone().replace(microsecond=0)
+        def event(title, minutes):
+            return dict(title=title, date_iso=(now + timedelta(minutes=minutes)).isoformat(),
+                        date="", location="", description="")
+        backend._calendar_events = [event("Later", 60), event("Past", -5), event("Next", 5)]
+        engine = QQmlApplicationEngine()
+        with patch("database.get_all_alarms", return_value=[]):
+            engine.rootContext().setContextProperty("backend", backend)
+            engine.load(QUrl.fromLocalFile(str(Path(__file__).resolve().parents[1] / "main.qml")))
+            self.assertTrue(engine.rootObjects())
+            root = engine.rootObjects()[0]
+            root.setProperty("eventNow", QDateTime(now))
+            def upcoming():
+                value = root.property("nextCalendarEvent")
+                return value.toVariant() if hasattr(value, "toVariant") else value
+            self.assertEqual(upcoming()["title"], "Next")
+            reads = backend.reads
+            root.setProperty("eventNow", QDateTime(now + timedelta(minutes=6)))
+            self.assertEqual(upcoming()["title"], "Later")
+            self.assertEqual(backend.reads, reads)
+            backend._apply_calendar_events([])
+            self.assertIsNone(upcoming())
+            root.close()
+            engine.deleteLater()
+            QTest.qWait(20)
 
     def test_qml_reads_event_list_once_per_update(self):
         backend = CalendarBackend()
